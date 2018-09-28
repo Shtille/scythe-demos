@@ -3,7 +3,9 @@
 TARGET = AtmosphericScattering
 TARGET_FILE = $(TARGET)$(TARGET_EXT)
 
-INCLUDE = $(ROOT_PATH)/scythe/include
+INCLUDE = \
+	-I$(ROOT_PATH)/scythe/include \
+	-I$(ROOT_PATH)/scythe/src
 DEFINES = 
 
 CFLAGS = -g -Wall -O3 -std=c++11
@@ -17,15 +19,15 @@ OBJECTS = $(SRC_FILES:.cpp=.o)
 
 LIBRARIES = -lscythe -lstdc++ -lfreetype -ljpeg -lpng -lz
 ifeq ($(OS),Windows_NT)
-    LIBRARIES += -lgdi32 -lglew -lopengl32
+	LIBRARIES += -lgdi32 -lglew -lopengl32
 else
-    UNAME_S := $(shell uname -s)
-    ifeq ($(UNAME_S),Linux)
-        # TODO: Linux-specific libraries
-    endif
-    ifeq ($(UNAME_S),Darwin)
-        LIBRARIES += -framework Cocoa -framework OpenGL -framework Foundation
-    endif
+	UNAME_S := $(shell uname -s)
+	ifeq ($(UNAME_S),Linux)
+		# TODO: Linux-specific libraries
+	endif
+	ifeq ($(UNAME_S),Darwin)
+		LIBRARIES += -framework Cocoa -framework OpenGL -framework Foundation
+	endif
 endif
 
 all: $(SRC_FILES) clean $(TARGET_FILE)
@@ -35,7 +37,8 @@ clean:
 	@find src -name "*.o" -type f -delete
 
 $(TARGET_FILE): $(OBJECTS)
-	@$(CCP) $(LDFLAGS) -o $(TARGET_FILE) $^ $(LIBRARIES) $(LIBRARY_PATH)
+	@echo making binary
+	@$(CCP) $(LDFLAGS) -o $(TARGET_FILE) $^ $(LIBRARIES) -L$(LIBRARY_PATH)
 
 %.o : %.cpp
 	@echo compiling file $<
