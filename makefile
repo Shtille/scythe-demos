@@ -30,7 +30,8 @@ export LDFLAGS
 
 # Main routine
 SUBDIRS = \
-	atmospheric_scattering
+	atmospheric_scattering \
+	shadows
 
 all: $(SUBDIRS) install
 
@@ -39,7 +40,7 @@ create_dir:
 
 install: create_dir
 	@find $(TARGET_PATH) -name "*$(TARGET_EXT)" -type f -delete
-	@find . -name "*$(TARGET_EXT)" -type f -exec mv {} $(TARGET_PATH) \;
+	@find . -type d -name $(TARGET_PATH) -prune -o -name "*$(TARGET_EXT)" -type f -exec mv {} $(TARGET_PATH) \;
 
 $(SUBDIRS):
 	@echo Get down to $@
