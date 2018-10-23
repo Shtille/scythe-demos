@@ -31,7 +31,8 @@ export LDFLAGS
 # Main routine
 SUBDIRS = \
 	atmospheric_scattering \
-	shadows
+	shadows \
+	ray_trace
 
 all: $(SUBDIRS) install
 
