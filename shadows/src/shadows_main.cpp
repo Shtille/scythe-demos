@@ -98,7 +98,7 @@ public:
 			return false;
 
 		camera_manager_ = new scythe::CameraManager();
-		camera_manager_->MakeFree(vec3(5.0f), vec3(0.0f));
+		camera_manager_->MakeFree(scythe::Vector3(5.0f), scythe::Vector3(0.0f));
 
 		// Finally bind constants
 		BindShaderConstants();
@@ -181,14 +181,23 @@ public:
 		// Ortho matrix is used for directional light sources and perspective for spot ones.
 		float znear = light_distance_ - 2.0f;
 		float zfar = light_distance_ + 2.0f;
-		scythe::Matrix4 depth_projection = scythe::PerspectiveMatrix(45.0f, 1, 1, znear, zfar);//scythe::OrthoMatrix()
-		scythe::Matrix4 depth_view = scythe::LookAt(light_position_, vec3(0.0f));
+		scythe::Matrix4 depth_projection;
+		scythe::Matrix4::CreatePerspective(45.0f, 1.0f, znear, zfar, &depth_projection);
+		scythe::Matrix4 depth_view;
+		scythe::Matrix4::CreateLookAt(light_position_, scythe::Vector3(0.0f), scythe::Vector3::UnitY(), &depth_view);
 		scythe::Matrix4 depth_projection_view = depth_projection * depth_view;
+		/*
+			Native view of bias matrix is:
+			    | 0.5 0.0 0.0 0.5 |
+			M = | 0.0 0.5 0.0 0.5 |
+			    | 0.0 0.0 0.5 0.5 |
+			    | 0.0 0.0 0.0 1.0 |
+		*/
 		scythe::Matrix4 bias_matrix(
-			0.5f, 0.0f, 0.0f, 0.0f,
-			0.0f, 0.5f, 0.0f, 0.0f,
-			0.0f, 0.0f, 0.5f, 0.0f,
-			0.5f, 0.5f, 0.5f, 1.0f
+			0.5f, 0.0f, 0.0f, 0.5f,
+			0.0f, 0.5f, 0.0f, 0.5f,
+			0.0f, 0.0f, 0.5f, 0.5f,
+			0.0f, 0.0f, 0.0f, 1.0f
 		);
 		depth_bias_projection_view_matrix_ = bias_matrix * depth_projection_view;
 
@@ -319,7 +328,9 @@ public:
 		if (need_update_projection_matrix_ || camera_manager_->animated())
 		{
 			need_update_projection_matrix_ = false;
-			renderer_->SetProjectionMatrix(scythe::PerspectiveMatrix(45.0f, width(), height(), 0.1f, 100.0f));
+			scythe::Matrix4 projection_matrix;
+			scythe::Matrix4::CreatePerspective(45.0f, aspect_ratio_, 0.1f, 100.0f, &projection_matrix);
+			renderer_->SetProjectionMatrix(projection_matrix);
 		}
 	}
 	

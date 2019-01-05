@@ -3,6 +3,7 @@
 #include "planet/planet_navigation.h"
 #include "model/sphere_model.h"
 #include "graphics/text.h"
+#include "math/constants.h"
 #include "camera.h"
 
 #include "declare_main.h"
@@ -194,7 +195,7 @@ public:
 		const float kFrameTime = GetFrameTime();
 
 		angle_ += 0.005f * kFrameTime;
-		rotate_matrix = scythe::Rotate4(cos(angle_), sin(angle_), 0.0f, 1.0f, 0.0f);
+		scythe::Matrix4::CreateRotationY(angle_, &rotate_matrix_);
 
 		if (!camera_animation_stopped_)
 			camera_manager_->Update(kFrameTime);
@@ -231,7 +232,7 @@ public:
 		renderer_->PushMatrix();
 		renderer_->Translate(kEarthPosition);
 		renderer_->Scale(kCloudsRadius);
-		renderer_->MultMatrix(rotate_matrix);
+		renderer_->MultMatrix(rotate_matrix_);
 		
 		clouds_shader_->Bind();
 		clouds_shader_->UniformMatrix4fv("u_projection_view", projection_view_matrix_);
@@ -254,7 +255,7 @@ public:
 		renderer_->PushMatrix();
 		renderer_->Translate(kEarthPosition);
 		renderer_->Scale(kOuterRadius);
-		renderer_->MultMatrix(rotate_matrix);
+		renderer_->MultMatrix(rotate_matrix_);
 		
 		sky_shader_->Bind();
 		sky_shader_->UniformMatrix4fv("u_projection_view", projection_view_matrix_);
@@ -366,7 +367,9 @@ public:
 			
 			float znear, zfar;
 			planet_navigation_->ObtainZNearZFar(&znear, &zfar);
-			renderer_->SetProjectionMatrix(scythe::PerspectiveMatrix(45.0f, width(), height(), znear, zfar));
+			scythe::Matrix4 projection;
+			scythe::Matrix4::CreatePerspective(45.0f, aspect_ratio_, znear, zfar, &projection);
+			renderer_->SetProjectionMatrix(projection);
 		}
 	}
 	
@@ -387,8 +390,7 @@ private:
 	
 	scythe::Matrix4 projection_view_matrix_;
 	
-	scythe::Matrix4 rotate_matrix;
-	scythe::Matrix3 normal_matrix;
+	scythe::Matrix4 rotate_matrix_;
 	
 	float angle_; //!< rotation angle of earth
 	

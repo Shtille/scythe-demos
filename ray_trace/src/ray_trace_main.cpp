@@ -33,7 +33,7 @@ public:
 	}
 	void BindShaderConstants()
 	{
-		const vec3 kSpherePosition(0.0f);
+		const scythe::Vector3 kSpherePosition(0.0f);
 
 		text_shader_->Bind();
 		text_shader_->Uniform1i("u_texture", 0);
@@ -46,15 +46,17 @@ public:
 		cast_shader_->Uniform3fv("u_spheres[0].position", kSpherePosition);
 		cast_shader_->Uniform1f("u_spheres[0].radius", 1.0f);
 		// Boxes
-		cast_shader_->Uniform3fv("u_boxes[0].min", vec3(-1.0f, -1.0f, 2.5f));
-		cast_shader_->Uniform3fv("u_boxes[0].max", vec3(1.0f, 1.0f, 3.f));
+		cast_shader_->Uniform3fv("u_boxes[0].min", scythe::Vector3(-1.0f, -1.0f, 2.5f));
+		cast_shader_->Uniform3fv("u_boxes[0].max", scythe::Vector3(1.0f, 1.0f, 3.f));
 
 		cast_shader_->Uniform1i("u_num_planes", 1);
 		cast_shader_->Uniform1i("u_num_spheres", 1);
 		cast_shader_->Uniform1i("u_num_boxes", 1);
 		// Light
-		cast_shader_->Uniform3fv("u_light.color", vec3(1e3));
-		cast_shader_->Uniform3fv("u_light.direction", vec3(1.0f, 0.5f, 0.5f).GetNormalized());
+		scythe::Vector3 light_direction(1.0f, 0.5f, 0.5f);
+		light_direction.Normalize();
+		cast_shader_->Uniform3fv("u_light.color", scythe::Vector3(1e3));
+		cast_shader_->Uniform3fv("u_light.direction", light_direction);
 		cast_shader_->Unbind();
 	}
 	void BindShaderVariables()
@@ -82,7 +84,7 @@ public:
 			return false;
 
 		camera_manager_ = new scythe::CameraManager();
-		camera_manager_->MakeFree(vec3(5.0f), vec3(0.0f));
+		camera_manager_->MakeFree(scythe::Vector3(5.0f), scythe::Vector3(0.0f));
 
 		// Finally bind constants
 		BindShaderConstants();
@@ -200,38 +202,42 @@ public:
 		if (need_update_projection_matrix_ || camera_manager_->animated())
 		{
 			need_update_projection_matrix_ = false;
-			renderer_->SetProjectionMatrix(scythe::PerspectiveMatrix(45.0f, width(), height(), 0.1f, 100.0f));
+			scythe::Matrix4 perspective_matrix;
+			scythe::Matrix4::CreatePerspective(45.0f, aspect_ratio_, 0.1f, 100.0f, &perspective_matrix);
+			renderer_->SetProjectionMatrix(perspective_matrix);
 		}
 	}
 	void UpdateRays()
 	{
 		const scythe::Matrix4& proj = renderer_->projection_matrix();
 		const scythe::Matrix4& view = renderer_->view_matrix();
-		const scythe::Matrix4 inverse_proj = proj.GetInverse();
-		const scythe::Matrix4 inverse_view = view.GetInverse();
-		vec2 ndc[4] = {
-			vec2(-1.0f, -1.0f),
-			vec2( 1.0f, -1.0f),
-			vec2(-1.0f,  1.0f),
-			vec2( 1.0f,  1.0f)
+		scythe::Matrix4 inverse_proj;
+		proj.Invert(&inverse_proj);
+		scythe::Matrix4 inverse_view;
+		view.Invert(&inverse_view);
+		scythe::Vector2 ndc[4] = {
+			scythe::Vector2(-1.0f, -1.0f),
+			scythe::Vector2( 1.0f, -1.0f),
+			scythe::Vector2(-1.0f,  1.0f),
+			scythe::Vector2( 1.0f,  1.0f)
 		};
-		vec3 rays[4];
+		scythe::Vector3 rays[4];
 		for (int i = 0; i < 4; ++i)
 		{
 			// Step 2: 4d Homogeneous Clip Coordinates ( range [-1:1, -1:1, -1:1, -1:1] )
-			vec4 ray_clip(
+			scythe::Vector4 ray_clip(
 				ndc[i].x,
 				ndc[i].y,
 				-1.0, // We want our ray's z to point forwards - this is usually the negative z direction in OpenGL style.
 				1.0
 				);
 			// Step 3: 4d Eye (Camera) Coordinates ( range [-x:x, -y:y, -z:z, -w:w] )
-			vec4 ray_eye = inverse_proj * ray_clip;
+			scythe::Vector4 ray_eye = inverse_proj * ray_clip;
 			// Now, we only needed to un-project the x,y part, so let's manually set the z,w part to mean "forwards, and not a point".
 			ray_eye.z = -1.0f;
 			ray_eye.w = 0.0f;
 			// Step 4: 4d World Coordinates ( range [-x:x, -y:y, -z:z, -w:w] )
-			rays[i] = inverse_view.TransformVector(ray_eye.xyz());
+			inverse_view.TransformVector(scythe::Vector3(ray_eye.x, ray_eye.y, ray_eye.z), &rays[i]);
 			rays[i].Normalize();
 		}
 		cast_shader_->Bind();

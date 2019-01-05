@@ -124,7 +124,7 @@ public:
 			return false;
 
 		camera_manager_ = new scythe::CameraManager();
-		camera_manager_->MakeFree(vec3(5.0f), vec3(0.0f));
+		camera_manager_->MakeFree(scythe::Vector3(5.0f), scythe::Vector3(0.0f));
 
 		// Finally bind constants
 		BindShaderConstants();
@@ -159,17 +159,20 @@ public:
 	}
 	void BakeCubemaps()
 	{
+		scythe::Matrix4 projection_matrix;
+		scythe::Matrix4::CreatePerspective(90.0f, 1.0f, 0.1f, 100.0f, &projection_matrix);
+
 		renderer_->DisableDepthTest();
 
 		// Irradiance cubemap
 		renderer_->ChangeTexture(env_texture_);
 		irradiance_shader_->Bind();
-		scythe::Matrix4 projection_matrix = scythe::PerspectiveMatrix(90.0f, 512, 512, 0.1f, 100.0f);
 		irradiance_shader_->Uniform1i("u_texture", 0);
 		irradiance_shader_->UniformMatrix4fv("u_projection", projection_matrix);
 		for (int face = 0; face < 6; ++face)
 		{
-			scythe::Matrix4 view_matrix = scythe::LookAtCube(vec3(0.0f), face);
+			scythe::Matrix4 view_matrix;
+			scythe::Matrix4::CreateLookAtCube(scythe::Vector3(0.0f), face, &view_matrix);
 			irradiance_shader_->UniformMatrix4fv("u_view", view_matrix);
 			renderer_->ChangeRenderTargetsToCube(1, &irradiance_rt_, nullptr, face, 0);
 			renderer_->ClearColorBuffer();
@@ -182,7 +185,6 @@ public:
 		// Prefilter cubemap
 		renderer_->ChangeTexture(env_texture_);
 		prefilter_shader_->Bind();
-		projection_matrix = scythe::PerspectiveMatrix(90.0f, 512, 512, 0.1f, 100.0f);
 		prefilter_shader_->Uniform1i("u_texture", 0);
 		//prefilter_shader_->Uniform1f("u_cube_resolution", (float)prefilter_rt_->width());
 		prefilter_shader_->UniformMatrix4fv("u_projection", projection_matrix);
@@ -193,7 +195,8 @@ public:
 			prefilter_shader_->Uniform1f("u_roughness", roughness);
 			for (int face = 0; face < 6; ++face)
 			{
-				scythe::Matrix4 view_matrix = scythe::LookAtCube(vec3(0.0f), face);
+				scythe::Matrix4 view_matrix;
+				scythe::Matrix4::CreateLookAtCube(scythe::Vector3(0.0f), face, &view_matrix);
 				prefilter_shader_->UniformMatrix4fv("u_view", view_matrix);
 				renderer_->ChangeRenderTargetsToCube(1, &prefilter_rt_, nullptr, face, mip);
 				renderer_->ClearColorBuffer();
@@ -231,7 +234,7 @@ public:
 	void RenderObjects()
 	{
 		renderer_->PushMatrix();
-		renderer_->Translate(vec3(0.0f));
+		renderer_->Translate(scythe::Vector3(0.0f));
 
 		renderer_->ChangeTexture(irradiance_rt_, 0);
 		renderer_->ChangeTexture(prefilter_rt_, 1);
@@ -335,7 +338,9 @@ public:
 		if (need_update_projection_matrix_ || camera_manager_->animated())
 		{
 			need_update_projection_matrix_ = false;
-			renderer_->SetProjectionMatrix(scythe::PerspectiveMatrix(45.0f, width(), height(), 0.1f, 100.0f));
+			scythe::Matrix4 projection_matrix;
+			scythe::Matrix4::CreatePerspective(45.0f, aspect_ratio_, 0.1f, 100.0f, &projection_matrix);
+			renderer_->SetProjectionMatrix(projection_matrix);
 		}
 	}
 	
