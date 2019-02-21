@@ -1,5 +1,6 @@
 # Makefile for scythe-demos
 
+TARGET = demos
 ROOT_PATH = ../..
 LIBRARY_PATH = $(ROOT_PATH)/lib
 TARGET_PATH = bin
@@ -25,6 +26,7 @@ endif
 # Exports
 export ROOT_PATH
 export LIBRARY_PATH
+export TARGET_PATH
 export TARGET_EXT
 export LDFLAGS
 
@@ -35,17 +37,29 @@ SUBDIRS = \
 	ray_trace \
 	pbr
 
-all: $(SUBDIRS) install
+all: $(TARGET)
 
 create_dir:
 	@test -d $(TARGET_PATH) || mkdir $(TARGET_PATH)
 
-install: create_dir
-	@find $(TARGET_PATH) -name "*$(TARGET_EXT)" -type f -delete
-	@find . -type d -name $(TARGET_PATH) -prune -o -name "*$(TARGET_EXT)" -type f -exec mv {} $(TARGET_PATH) \;
+.PHONY: clean
+clean:
+	@$(foreach directory, $(SUBDIRS), $(MAKE) -C $(directory) clean ;)
 
-$(SUBDIRS):
-	@echo Get down to $@
-	@$(MAKE) -C $@
+.PHONY: install
+install: create_dir uninstall
+	@$(foreach directory, $(SUBDIRS), $(MAKE) -C $(directory) install ;)
+
+.PHONY: uninstall
+uninstall:
+	@$(foreach directory, $(SUBDIRS), $(MAKE) -C $(directory) uninstall ;)
+
+.PHONY: help
+help:
+	@echo available targets: all clean install uninstall
+
+$(TARGET): $(SUBDIRS)
 
 .PHONY: $(SUBDIRS)
+$(SUBDIRS):
+	@$(MAKE) -C $@ $@
