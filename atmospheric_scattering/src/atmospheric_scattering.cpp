@@ -24,6 +24,7 @@ namespace {
 }
 
 class AtmosphericScatteringApp : public scythe::OpenGlApplication
+							   , public scythe::DesktopInputListener
 {
 public:
 	AtmosphericScatteringApp()
@@ -36,6 +37,7 @@ public:
 	, need_update_projection_matrix_(true)
 	, camera_animation_stopped_(false)
 	{
+		SetInputListener(this);
 	}
 	const char* GetTitle() final
 	{
@@ -295,6 +297,10 @@ public:
 
 		RenderInterface();
 	}
+	void OnChar(unsigned short code) final
+	{
+
+	}
 	void OnKeyDown(scythe::PublicKey key, int mods) final
 	{
 		if (key == scythe::PublicKey::kF)
@@ -326,6 +332,10 @@ public:
 			planet_navigation_->SmoothRotation(angle_x);
 		}
 	}
+	void OnKeyUp(scythe::PublicKey key, int modifiers) final
+	{
+
+	}
 	void OnMouseDown(scythe::MouseButton button, int modifiers) final
 	{
 		if (mouse_.button_down(scythe::MouseButton::kLeft))
@@ -352,6 +362,10 @@ public:
 			const scythe::Matrix4& view = renderer_->view_matrix();
 			planet_navigation_->PanMove(mouse_.x(), mouse_.y(), viewport, proj, view);
 		}
+	}
+	void OnScroll(float delta_x, float delta_y) final
+	{
+
 	}
 	void OnSize(int w, int h) final
 	{

@@ -14,6 +14,7 @@ PBR shader to use in application
 #define APP_NAME PbrApp
 
 class APP_NAME : public scythe::OpenGlApplication
+			   , public scythe::DesktopInputListener
 {
 public:
 	APP_NAME()
@@ -24,6 +25,7 @@ public:
 	, camera_manager_(nullptr)
 	, need_update_projection_matrix_(true)
 	{
+		SetInputListener(this);
 	}
 	const char* GetTitle() final
 	{
@@ -287,6 +289,10 @@ public:
 		RenderObjects();
 		RenderInterface();
 	}
+	void OnChar(unsigned short code) final
+	{
+
+	}
 	void OnKeyDown(scythe::PublicKey key, int mods) final
 	{
 		if (key == scythe::PublicKey::kF)
@@ -318,6 +324,9 @@ public:
 			camera_manager_->RotateAroundTargetInZ(-0.1f);
 		}
 	}
+	void OnKeyUp(scythe::PublicKey key, int modifiers) final
+	{
+	}
 	void OnMouseDown(scythe::MouseButton button, int modifiers) final
 	{
 	}
@@ -325,6 +334,9 @@ public:
 	{
 	}
 	void OnMouseMove() final
+	{
+	}
+	void OnScroll(float delta_x, float delta_y) final
 	{
 	}
 	void OnSize(int w, int h) final

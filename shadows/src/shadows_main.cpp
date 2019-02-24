@@ -15,6 +15,7 @@ The main concept of creating this application is testing cubemap edge artefacts 
 #define APP_NAME ShadowsApp
 
 class APP_NAME : public scythe::OpenGlApplication
+			   , public scythe::DesktopInputListener
 {
 public:
 	APP_NAME()
@@ -29,6 +30,7 @@ public:
 	, need_update_projection_matrix_(true)
 	, show_shadow_texture_(false)
 	{
+		SetInputListener(this);
 	}
 	const char* GetTitle() final
 	{
@@ -273,6 +275,9 @@ public:
 		RenderScene();
 		RenderInterface();
 	}
+	void OnChar(unsigned short code) final
+	{
+	}
 	void OnKeyDown(scythe::PublicKey key, int mods) final
 	{
 		if (key == scythe::PublicKey::kF)
@@ -308,6 +313,9 @@ public:
 			show_shadow_texture_ = !show_shadow_texture_;
 		}
 	}
+	void OnKeyUp(scythe::PublicKey key, int modifiers) final
+	{
+	}
 	void OnMouseDown(scythe::MouseButton button, int modifiers) final
 	{
 	}
@@ -315,6 +323,9 @@ public:
 	{
 	}
 	void OnMouseMove() final
+	{
+	}
+	void OnScroll(float delta_x, float delta_y) final
 	{
 	}
 	void OnSize(int w, int h) final
