@@ -52,6 +52,7 @@ Temporary Items
 
 # Some intermediate files
 *.o
+*.d
 *.a
 *.so
 
