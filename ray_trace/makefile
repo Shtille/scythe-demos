@@ -3,7 +3,7 @@
 # 'TARGET' should coinside with directory name
 TARGET = ray_trace
 TARGET_NAME = RayTrace
-TARGET_FILE = $(TARGET_NAME)$(TARGET_EXT)
+TARGET_FILE = $(TARGET_PATH)/$(TARGET_NAME)$(TARGET_EXT)
 
 INCLUDE = \
 	-I$(ROOT_PATH)/scythe/include \
@@ -26,6 +26,10 @@ DEPS := $(patsubst %,$(DEPDIR)/%.d,$(basename $(SRC_FILES)))
 # compilers (at least gcc and clang) don't create the subdirectories automatically
 $(shell mkdir -p $(dir $(OBJECTS)) >/dev/null)
 $(shell mkdir -p $(dir $(DEPS)) >/dev/null)
+
+# User library dependencies
+DEPENDENT_LIBRARIES = scythe
+DEPENDENT_LIB_FILES = $(foreach name,$(DEPENDENT_LIBRARIES),$(patsubst %,$(LIBRARY_PATH)/lib%$(STATIC_LIB_EXT),$(name)))
 
 # C++ flags
 CXXFLAGS := -std=c++11
@@ -66,12 +70,8 @@ endif
 
 ifeq ($(OS),Windows_NT)
 	CLEAN = rmdir /Q /S $(OBJDIR) && rmdir /Q /S $(DEPDIR)
-	INSTALL = COPY /Y $(TARGET_FILE) ../$(TARGET_PATH)
-	UNINSTALL = DEL /Q "..\$(TARGET_PATH)\$(TARGET_FILE)"
 else
 	CLEAN = rm -r $(OBJDIR) $(DEPDIR)
-	INSTALL = cp $(TARGET_FILE) ../$(TARGET_PATH)
-	UNINSTALL = find ../$(TARGET_PATH) -name "$(TARGET_FILE)" -type f -delete
 endif
 
 all: $(TARGET)
@@ -80,22 +80,14 @@ all: $(TARGET)
 clean:
 	@$(CLEAN)
 
-.PHONY: install
-install:
-	@$(INSTALL)
-
-.PHONY: uninstall
-uninstall:
-	@$(UNINSTALL)
-
 .PHONY: help
 help:
-	@echo available targets: all clean install uninstall
+	@echo available targets: all clean
 
 $(TARGET): $(TARGET_FILE)
 
-$(TARGET_FILE): $(OBJECTS)
-	@echo linking $@
+$(TARGET_FILE): $(OBJECTS) $(DEPENDENT_LIB_FILES)
+	@echo linking $(TARGET_NAME)$(TARGET_EXT)
 	@$(LINK.o) $(OBJECTS)
 
 $(OBJDIR)/%.o: %.cpp

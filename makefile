@@ -2,8 +2,8 @@
 
 TARGET = demos
 ROOT_PATH = ../..
-LIBRARY_PATH = $(ROOT_PATH)/lib
-TARGET_PATH = bin
+BINARY_PATH := bin
+TARGET_PATH = ../$(BINARY_PATH)
 
 # Platform-specific defines
 ifeq ($(OS),Windows_NT)
@@ -25,7 +25,6 @@ endif
 
 # Exports
 export ROOT_PATH
-export LIBRARY_PATH
 export TARGET_PATH
 export TARGET_EXT
 export LDFLAGS
@@ -40,25 +39,17 @@ SUBDIRS = \
 all: $(TARGET)
 
 create_dir:
-	@test -d $(TARGET_PATH) || mkdir $(TARGET_PATH)
+	@test -d $(BINARY_PATH) || mkdir $(BINARY_PATH)
 
 .PHONY: clean
 clean:
 	@$(foreach directory, $(SUBDIRS), $(MAKE) -C $(directory) clean ;)
 
-.PHONY: install
-install: create_dir uninstall
-	@$(foreach directory, $(SUBDIRS), $(MAKE) -C $(directory) install ;)
-
-.PHONY: uninstall
-uninstall:
-	@$(foreach directory, $(SUBDIRS), $(MAKE) -C $(directory) uninstall ;)
-
 .PHONY: help
 help:
-	@echo available targets: all clean install uninstall
+	@echo available targets: all clean
 
-$(TARGET): $(SUBDIRS)
+$(TARGET): create_dir $(SUBDIRS)
 
 .PHONY: $(SUBDIRS)
 $(SUBDIRS):
