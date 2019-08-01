@@ -25,8 +25,8 @@ DEPS := $(patsubst %,$(DEPDIR)/%.d,$(basename $(SRC_FILES)))
 
 # compilers (at least gcc and clang) don't create the subdirectories automatically
 ifeq ($(OS),Windows_NT)
-$(foreach dir,$(subst /,$(SL),$(dir $(OBJECTS))),$(shell if not exist $(dir) mkdir $(dir)))
-$(foreach dir,$(subst /,$(SL),$(dir $(DEPS))),$(shell if not exist $(dir) mkdir $(dir)))
+$(foreach dir,$(subst /,\\,$(dir $(OBJECTS))),$(shell if not exist $(dir) mkdir $(dir)))
+$(foreach dir,$(subst /,\\,$(dir $(DEPS))),$(shell if not exist $(dir) mkdir $(dir)))
 else
 $(shell mkdir -p $(dir $(OBJECTS)) >/dev/null)
 $(shell mkdir -p $(dir $(DEPS)) >/dev/null)
@@ -68,7 +68,7 @@ LINK.o = $(CXX) $(LDFLAGS) $(LDLIBS) -o $@
 PRECOMPILE =
 # postcompile step
 ifeq ($(OS),Windows_NT)
-	POSTCOMPILE = MOVE /Y $(DEPDIR)$(SL)$(subst /,$(SL),$*.Td) $(DEPDIR)$(SL)$(subst /,$(SL),$*.d)
+	POSTCOMPILE = MOVE /Y $(DEPDIR)\\$(subst /,\\,$*.Td) $(DEPDIR)\\$(subst /,\\,$*.d)
 else
 	POSTCOMPILE = mv -f $(DEPDIR)/$*.Td $(DEPDIR)/$*.d
 endif
