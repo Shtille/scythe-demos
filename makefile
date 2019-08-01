@@ -36,10 +36,16 @@ SUBDIRS = \
 	ray_trace \
 	pbr
 
+ifeq ($(OS),Windows_NT)
+	CREATE_DIR = if not exist $(BINARY_PATH) mkdir $(BINARY_PATH)
+else
+	CREATE_DIR = test -d $(BINARY_PATH) || mkdir -p $(BINARY_PATH)
+endif
+
 all: $(TARGET)
 
 create_dir:
-	@test -d $(BINARY_PATH) || mkdir $(BINARY_PATH)
+	@$(CREATE_DIR)
 
 .PHONY: clean
 clean:
