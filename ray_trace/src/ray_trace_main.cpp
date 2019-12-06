@@ -1,4 +1,4 @@
-#include "model/screen_quad_model.h"
+#include "model/mesh.h"
 #include "graphics/text.h"
 #include "camera.h"
 
@@ -67,9 +67,9 @@ public:
 	bool Load() final
 	{
 		// Quad model
-		quad_ = new scythe::ScreenQuadModel(renderer_);
+		quad_ = new scythe::Mesh(renderer_);
 		quad_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kVertex, 3));
-		quad_->Create();
+		quad_->CreateQuadFullscreen();
 		if (!quad_->MakeRenderable())
 			return false;
 		
@@ -261,7 +261,7 @@ public:
 	}
 	
 private:
-	scythe::GeneratedModel * quad_;
+	scythe::Mesh * quad_;
 
 	scythe::Shader * text_shader_;
 	scythe::Shader * cast_shader_;

@@ -1,5 +1,4 @@
-#include "model/sphere_model.h"
-#include "model/box_model.h"
+#include "model/mesh.h"
 #include "graphics/text.h"
 #include "math/constants.h"
 
@@ -36,16 +35,16 @@ public:
 	bool Load() final
 	{
 		// Sphere model
-		sphere_ = new scythe::SphereModel(renderer_, 128, 64);
+		sphere_ = new scythe::Mesh(renderer_);
 		sphere_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kVertex, 3));
-		sphere_->Create();
+		sphere_->CreateSphere(1.0f, 128, 64);
 		if (!sphere_->MakeRenderable())
 			return false;
 
 		// Box model
-		box_ = new scythe::BoxModel(renderer_, 0.1f, 1.0f, 20.0f);
+		box_ = new scythe::Mesh(renderer_);
 		box_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kVertex, 3));
-		box_->Create();
+		box_->CreateBox(0.1f, 1.0f, 20.0f);
 		if (!box_->MakeRenderable())
 			return false;
 		
@@ -180,8 +179,8 @@ public:
 	}
 	
 private:
-	scythe::SphereModel * sphere_;
-	scythe::BoxModel * box_;
+	scythe::Mesh * sphere_;
+	scythe::Mesh * box_;
 
 	scythe::Shader * object_shader_;
 	scythe::Shader * text_shader_;

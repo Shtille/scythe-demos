@@ -1,5 +1,4 @@
-#include "model/sphere_model.h"
-#include "model/screen_quad_model.h"
+#include "model/mesh.h"
 #include "graphics/text.h"
 #include "camera.h"
 
@@ -59,20 +58,20 @@ public:
 	bool Load() final
 	{
 		// Sphere model
-		sphere_ = new scythe::SphereModel(renderer_, 128, 64);
+		sphere_ = new scythe::Mesh(renderer_);
 		sphere_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kVertex, 3));
 		sphere_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kNormal, 3));
 		sphere_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kTexcoord, 2));
 		sphere_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kTangent, 3));
 		sphere_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kBinormal, 3));
-		sphere_->Create();
+		sphere_->CreateSphere(1.0f, 128, 64);
 		if (!sphere_->MakeRenderable())
 			return false;
 
 		// Screen quad model
-		quad_ = new scythe::ScreenQuadModel(renderer_);
+		quad_ = new scythe::Mesh(renderer_);
 		quad_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kVertex, 3));
-		quad_->Create();
+		quad_->CreateQuadFullscreen();
 		if (!quad_->MakeRenderable())
 			return false;
 		
@@ -357,8 +356,8 @@ public:
 	}
 	
 private:
-	scythe::GeneratedModel * sphere_;
-	scythe::GeneratedModel * quad_;
+	scythe::Mesh * sphere_;
+	scythe::Mesh * quad_;
 
 	scythe::Shader * text_shader_;
 	scythe::Shader * gui_shader_;

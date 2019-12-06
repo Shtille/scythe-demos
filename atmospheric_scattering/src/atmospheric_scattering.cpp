@@ -1,7 +1,7 @@
 #include "constants.h"
 
 #include "planet/planet_navigation.h"
-#include "model/sphere_model.h"
+#include "model/mesh.h"
 #include "graphics/text.h"
 #include "math/constants.h"
 #include "camera.h"
@@ -138,11 +138,11 @@ public:
 	bool Load() final
 	{
 		// Sphere model
-		sphere_ = new scythe::SphereModel(renderer_, 128, 64);
+		sphere_ = new scythe::Mesh(renderer_);
 		sphere_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kVertex, 3));
 		sphere_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kNormal, 3));
 		sphere_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kTexcoord, 2));
-		sphere_->Create();
+		sphere_->CreateSphere(1.0f, 128, 64);
 		if (!sphere_->MakeRenderable())
 			return false;
 		
@@ -388,7 +388,7 @@ public:
 	}
 	
 private:
-	scythe::SphereModel * sphere_;
+	scythe::Mesh * sphere_;
 	scythe::Shader * ground_shader_;
 	scythe::Shader * clouds_shader_;
 	scythe::Shader * sky_shader_;
