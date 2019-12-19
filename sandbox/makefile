@@ -1,13 +1,14 @@
 # Makefile
 
 # 'TARGET' should coinside with directory name
-TARGET = anchor
-TARGET_NAME = Anchor
+TARGET = sandbox
+TARGET_NAME = Sandbox
 TARGET_FILE = $(TARGET_PATH)/$(TARGET_NAME)$(TARGET_EXT)
 
 INCLUDE = \
 	-I$(ROOT_PATH)/scythe/include \
-	-I$(ROOT_PATH)/scythe/src
+	-I$(ROOT_PATH)/scythe/src \
+	-I$(ROOT_PATH)/thirdparty/bullet/src
 DEFINES = 
 
 SRC_DIRS = src
@@ -45,7 +46,7 @@ CPPFLAGS += $(INCLUDE)
 CPPFLAGS += $(DEFINES)
 # linker flags
 LDFLAGS += -L$(LIBRARY_PATH)
-LDLIBS = -lscythe -lstdc++ -lfreetype -ljpeg -lpng -lz
+LDLIBS = -lscythe -lstdc++ -lbullet -lfreetype -ljpeg -lpng -lz
 ifeq ($(OS),Windows_NT)
 	LDLIBS += -lgdi32 -lglew -lopengl32
 else
