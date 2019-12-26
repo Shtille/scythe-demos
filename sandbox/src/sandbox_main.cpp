@@ -11,6 +11,42 @@
 
 #include "declare_main.h"
 
+#include <vector>
+
+// Class for storing node and color of object
+class ObjectInfo
+{
+public:
+	ObjectInfo(scythe::Node * node, const scythe::Vector3& color)
+	: node_(node)
+	, color_(color)
+	{
+		// node already has reference count of 1
+	}
+	ObjectInfo(ObjectInfo && other) // move contructor
+	: node_(other.node_)
+	, color_(other.color_)
+	{
+		// Nullify other node, because we don't own it anymore
+		other.node_ = nullptr;
+	}
+	~ObjectInfo()
+	{
+		SC_SAFE_RELEASE(node_);
+	}
+	scythe::Node * node() const
+	{
+		return node_;
+	}
+	const scythe::Vector3& color() const
+	{
+		return color_;
+	}
+private:
+	scythe::Node * node_;
+	scythe::Vector3 color_;
+};
+
 class SandboxApp : public scythe::OpenGlApplication
 				 , public scythe::DesktopInputListener
 {
@@ -20,8 +56,6 @@ public:
 	, box_mesh_(nullptr)
 	, sphere_model_(nullptr)
 	, box_model_(nullptr)
-	, sphere_node_(nullptr)
-	, box_node_(nullptr)
 	, font_(nullptr)
 	, fps_text_(nullptr)
 	{
@@ -49,14 +83,33 @@ public:
 		object_shader_->Uniform3fv("u_light.position", light_position_);
 		object_shader_->Unbind();
 	}
+	void CreateSphere(const scythe::Vector3& position, float radius, const scythe::Vector3& color)
+	{
+		scythe::PhysicsRigidBody::Parameters params(0.1f);
+		scythe::Node * node = scythe::Node::Create("sphere");
+		node->SetTranslation(position);
+		node->SetDrawable(sphere_model_);
+		node->SetCollisionObject(scythe::PhysicsCollisionObject::kRigidBody,
+			scythe::PhysicsCollisionShape::DefineSphere(radius),
+			&params);
+		objects_.push_back(ObjectInfo(node, color));
+	}
+	void CreateBox(const scythe::Vector3& position, const scythe::Vector3& extents, const scythe::Vector3& color)
+	{
+		scythe::PhysicsRigidBody::Parameters params(0.1f);
+		scythe::Node * node = scythe::Node::Create("box");
+		node->SetTranslation(position);
+		node->SetDrawable(box_model_);
+		node->SetCollisionObject(scythe::PhysicsCollisionObject::kRigidBody,
+			scythe::PhysicsCollisionShape::DefineBox(extents),
+			&params);
+		objects_.push_back(ObjectInfo(node, color));
+	}
 	bool Load() final
 	{
 		// Constants
 		const float kSphereRadius(1.0f);
-		const scythe::Vector3 kSpherePosition(0.0f, 3.0f, 0.0f);
-
 		const scythe::Vector3 kBoxExtents(5.0f, 1.0f, 5.0f);
-		const scythe::Vector3 kBoxPosition(0.0f, 0.0f, 0.0f);
 
 		scythe::PhysicsController::CreateInstance();
 		if (!scythe::PhysicsController::GetInstance()->Initialize())
@@ -83,23 +136,37 @@ public:
 		box_model_ = scythe::Model::Create(box_mesh_);
 
 		// Nodes
+		scythe::Node * node = nullptr;
 		{
-			scythe::PhysicsRigidBody::Parameters params(0.1f);
-			sphere_node_ = scythe::Node::Create("sphere");
-			sphere_node_->SetTranslation(kSpherePosition);
-			sphere_node_->SetDrawable(sphere_model_);
-			sphere_node_->SetCollisionObject(scythe::PhysicsCollisionObject::kRigidBody,
-				scythe::PhysicsCollisionShape::DefineSphere(kSphereRadius),
-				&params);
-		}
-		{
+			// Static floor
 			scythe::PhysicsRigidBody::Parameters params(0.0f);
-			box_node_ = scythe::Node::Create("box");
-			box_node_->SetTranslation(kBoxPosition);
-			box_node_->SetDrawable(box_model_);
-			box_node_->SetCollisionObject(scythe::PhysicsCollisionObject::kRigidBody,
+			node = scythe::Node::Create("box");
+			node->SetTranslation(scythe::Vector3(0.0f, 0.0f, 0.0f));
+			node->SetDrawable(box_model_);
+			node->SetCollisionObject(scythe::PhysicsCollisionObject::kRigidBody,
 				scythe::PhysicsCollisionShape::DefineBox(kBoxExtents),
 				&params);
+			objects_.push_back(ObjectInfo(node, scythe::Vector3(0.1f, 1.0f, 0.2f)));
+		}
+		{
+			scythe::PhysicsRigidBody::Parameters params(0.1f);
+			node = scythe::Node::Create("sphere");
+			node->SetTranslation(scythe::Vector3(0.0f, 3.0f, 0.0f));
+			node->SetDrawable(sphere_model_);
+			node->SetCollisionObject(scythe::PhysicsCollisionObject::kRigidBody,
+				scythe::PhysicsCollisionShape::DefineSphere(kSphereRadius),
+				&params);
+			objects_.push_back(ObjectInfo(node, scythe::Vector3(1.0f, 1.0f, 0.5f)));
+		}
+		{
+			scythe::PhysicsRigidBody::Parameters params(0.2f);
+			node = scythe::Node::Create("sphere");
+			node->SetTranslation(scythe::Vector3(0.5f, 5.0f, 0.5f));
+			node->SetDrawable(sphere_model_);
+			node->SetCollisionObject(scythe::PhysicsCollisionObject::kRigidBody,
+				scythe::PhysicsCollisionShape::DefineSphere(kSphereRadius),
+				&params);
+			objects_.push_back(ObjectInfo(node, scythe::Vector3(0.8f, 0.0f, 0.5f)));
 		}
 		
 		// Load shaders
@@ -139,10 +206,7 @@ public:
 	{
 		if (fps_text_)
 			delete fps_text_;
-		box_node_->SetDrawable(nullptr);
-		SC_SAFE_RELEASE(box_node_);
-		sphere_node_->SetDrawable(nullptr);
-		SC_SAFE_RELEASE(sphere_node_);
+		objects_.clear(); // release nodes
 		SC_SAFE_RELEASE(box_model_);
 		SC_SAFE_RELEASE(sphere_model_)
 		SC_SAFE_RELEASE(box_mesh_);
@@ -176,8 +240,10 @@ public:
 		object_shader_->Bind();
 		object_shader_->UniformMatrix4fv("u_projection_view", projection_view_matrix_);
 
-		RenderNode(sphere_node_, scythe::Vector3(1.0f, 1.0f, 0.5f));
-		RenderNode(box_node_, scythe::Vector3(0.1f, 1.0f, 0.2f));
+		for (auto& object : objects_)
+		{
+			RenderNode(object.node(), object.color());
+		}
 
 		object_shader_->Unbind();
 	}
@@ -249,9 +315,6 @@ private:
 	scythe::Model * sphere_model_;
 	scythe::Model * box_model_;
 
-	scythe::Node * sphere_node_;
-	scythe::Node * box_node_;
-
 	scythe::Shader * object_shader_;
 	scythe::Shader * text_shader_;
 
@@ -261,6 +324,8 @@ private:
 	scythe::Matrix4 projection_view_matrix_;
 
 	scythe::Vector3 light_position_;
+
+	std::vector<ObjectInfo> objects_;
 };
 
 DECLARE_MAIN(SandboxApp);
