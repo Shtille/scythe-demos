@@ -37,9 +37,17 @@ public:
 	}
 	void BindShaderConstants()
 	{
+		const scythe::Vector3 kLightColor(1.0f);
+
+		object_shader_->Bind();
+		object_shader_->Uniform3fv("u_light.color", kLightColor);
+		object_shader_->Unbind();
 	}
 	void BindShaderVariables()
 	{
+		object_shader_->Bind();
+		object_shader_->Uniform3fv("u_light.position", light_position_);
+		object_shader_->Unbind();
 	}
 	bool Load() final
 	{
@@ -57,6 +65,7 @@ public:
 		// Sphere model
 		sphere_mesh_ = new scythe::Mesh(renderer_);
 		sphere_mesh_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kVertex, 3));
+		sphere_mesh_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kNormal, 3));
 		sphere_mesh_->CreateSphere(kSphereRadius, 128, 64);
 		if (!sphere_mesh_->MakeRenderable())
 			return false;
@@ -64,6 +73,7 @@ public:
 		// Box model
 		box_mesh_ = new scythe::Mesh(renderer_);
 		box_mesh_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kVertex, 3));
+		box_mesh_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kNormal, 3));
 		box_mesh_->CreateBox(kBoxExtents);
 		if (!box_mesh_->MakeRenderable())
 			return false;
@@ -117,6 +127,9 @@ public:
 
 		projection_view_matrix_ = renderer_->projection_matrix() * renderer_->view_matrix();
 
+		// Setup other parameters
+		light_position_.Set(100.0f, 100.0f, 100.f);
+
 		// Finally bind constants
 		BindShaderConstants();
 		
@@ -152,7 +165,7 @@ public:
 		renderer_->LoadMatrix(node->GetWorldMatrix());
 
 		object_shader_->UniformMatrix4fv("u_model", renderer_->model_matrix());
-		object_shader_->Uniform4f("u_color", color.x, color.y, color.z, 1.0f);
+		object_shader_->Uniform3fv("u_color", color);
 		
 		node->GetDrawable()->Draw();
 		
@@ -246,6 +259,8 @@ private:
 	scythe::DynamicText * fps_text_;
 	
 	scythe::Matrix4 projection_view_matrix_;
+
+	scythe::Vector3 light_position_;
 };
 
 DECLARE_MAIN(SandboxApp);
