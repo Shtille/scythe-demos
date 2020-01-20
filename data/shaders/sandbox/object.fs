@@ -18,8 +18,6 @@ in DATA
 	//vec4 shadow_coord;
 } fs_in;
 
-const float kScreenGamma = 2.2; // Assume that monitor is in sRGB color space
-
 void main()
 {
 	// Compute ambient term
@@ -34,7 +32,6 @@ void main()
 
 	// Compute total color
 	vec3 color_linear = ambient + diffuse;
-	vec3 color_corrected = pow(color_linear, vec3(1.0/kScreenGamma));
 
-	out_color = vec4(color_corrected, 1.0);
+	out_color = vec4(color_linear, 1.0);
 }

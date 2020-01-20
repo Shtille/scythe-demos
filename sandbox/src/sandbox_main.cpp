@@ -1,3 +1,14 @@
+/**
+ * Main source file for sandbox demo.
+ *
+ * Task list.
+ * [+] 1. Add possibility of adding objects with custom sizes.
+ * [-] 2. Add console and objects addition via its input.
+ * [-] 3. Add mesh-based physical objects (tetrahedron as example).
+ */
+
+#include "object.h"
+
 #include "model/mesh.h"
 #include "graphics/text.h"
 #include "math/constants.h"
@@ -12,40 +23,6 @@
 #include "declare_main.h"
 
 #include <vector>
-
-// Class for storing node and color of object
-class ObjectInfo
-{
-public:
-	ObjectInfo(scythe::Node * node, const scythe::Vector3& color)
-	: node_(node)
-	, color_(color)
-	{
-		// node already has reference count of 1
-	}
-	ObjectInfo(ObjectInfo && other) // move contructor
-	: node_(other.node_)
-	, color_(other.color_)
-	{
-		// Nullify other node, because we don't own it anymore
-		other.node_ = nullptr;
-	}
-	~ObjectInfo()
-	{
-		SC_SAFE_RELEASE(node_);
-	}
-	scythe::Node * node() const
-	{
-		return node_;
-	}
-	const scythe::Vector3& color() const
-	{
-		return color_;
-	}
-private:
-	scythe::Node * node_;
-	scythe::Vector3 color_;
-};
 
 class SandboxApp : public scythe::OpenGlApplication
 				 , public scythe::DesktopInputListener
@@ -83,34 +60,32 @@ public:
 		object_shader_->Uniform3fv("u_light.position", light_position_);
 		object_shader_->Unbind();
 	}
-	void CreateSphere(const scythe::Vector3& position, float radius, const scythe::Vector3& color)
+	void CreateSphere(const scythe::Vector3& position, float radius, const scythe::Vector3& color, float mass)
 	{
-		scythe::PhysicsRigidBody::Parameters params(0.1f);
+		scythe::PhysicsRigidBody::Parameters params(mass);
 		scythe::Node * node = scythe::Node::Create("sphere");
 		node->SetTranslation(position);
+		node->SetScale(radius);
 		node->SetDrawable(sphere_model_);
 		node->SetCollisionObject(scythe::PhysicsCollisionObject::kRigidBody,
 			scythe::PhysicsCollisionShape::DefineSphere(radius),
 			&params);
-		objects_.push_back(ObjectInfo(node, color));
+		objects_.push_back(Object(node, color));
 	}
-	void CreateBox(const scythe::Vector3& position, const scythe::Vector3& extents, const scythe::Vector3& color)
+	void CreateBox(const scythe::Vector3& position, const scythe::Vector3& extents, const scythe::Vector3& color, float mass)
 	{
-		scythe::PhysicsRigidBody::Parameters params(0.1f);
+		scythe::PhysicsRigidBody::Parameters params(mass);
 		scythe::Node * node = scythe::Node::Create("box");
 		node->SetTranslation(position);
+		node->SetScale(extents);
 		node->SetDrawable(box_model_);
 		node->SetCollisionObject(scythe::PhysicsCollisionObject::kRigidBody,
 			scythe::PhysicsCollisionShape::DefineBox(extents),
 			&params);
-		objects_.push_back(ObjectInfo(node, color));
+		objects_.push_back(Object(node, color));
 	}
 	bool Load() final
 	{
-		// Constants
-		const float kSphereRadius(1.0f);
-		const scythe::Vector3 kBoxExtents(5.0f, 1.0f, 5.0f);
-
 		scythe::PhysicsController::CreateInstance();
 		if (!scythe::PhysicsController::GetInstance()->Initialize())
 			return false;
@@ -119,7 +94,7 @@ public:
 		sphere_mesh_ = new scythe::Mesh(renderer_);
 		sphere_mesh_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kVertex, 3));
 		sphere_mesh_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kNormal, 3));
-		sphere_mesh_->CreateSphere(kSphereRadius, 128, 64);
+		sphere_mesh_->CreateSphere(1.0f, 128, 64);
 		if (!sphere_mesh_->MakeRenderable())
 			return false;
 
@@ -127,7 +102,7 @@ public:
 		box_mesh_ = new scythe::Mesh(renderer_);
 		box_mesh_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kVertex, 3));
 		box_mesh_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kNormal, 3));
-		box_mesh_->CreateBox(kBoxExtents);
+		box_mesh_->CreateCube();
 		if (!box_mesh_->MakeRenderable())
 			return false;
 
@@ -136,38 +111,9 @@ public:
 		box_model_ = scythe::Model::Create(box_mesh_);
 
 		// Nodes
-		scythe::Node * node = nullptr;
-		{
-			// Static floor
-			scythe::PhysicsRigidBody::Parameters params(0.0f);
-			node = scythe::Node::Create("box");
-			node->SetTranslation(scythe::Vector3(0.0f, 0.0f, 0.0f));
-			node->SetDrawable(box_model_);
-			node->SetCollisionObject(scythe::PhysicsCollisionObject::kRigidBody,
-				scythe::PhysicsCollisionShape::DefineBox(kBoxExtents),
-				&params);
-			objects_.push_back(ObjectInfo(node, scythe::Vector3(0.1f, 1.0f, 0.2f)));
-		}
-		{
-			scythe::PhysicsRigidBody::Parameters params(0.1f);
-			node = scythe::Node::Create("sphere");
-			node->SetTranslation(scythe::Vector3(0.0f, 3.0f, 0.0f));
-			node->SetDrawable(sphere_model_);
-			node->SetCollisionObject(scythe::PhysicsCollisionObject::kRigidBody,
-				scythe::PhysicsCollisionShape::DefineSphere(kSphereRadius),
-				&params);
-			objects_.push_back(ObjectInfo(node, scythe::Vector3(1.0f, 1.0f, 0.5f)));
-		}
-		{
-			scythe::PhysicsRigidBody::Parameters params(0.2f);
-			node = scythe::Node::Create("sphere");
-			node->SetTranslation(scythe::Vector3(0.5f, 5.0f, 0.5f));
-			node->SetDrawable(sphere_model_);
-			node->SetCollisionObject(scythe::PhysicsCollisionObject::kRigidBody,
-				scythe::PhysicsCollisionShape::DefineSphere(kSphereRadius),
-				&params);
-			objects_.push_back(ObjectInfo(node, scythe::Vector3(0.8f, 0.0f, 0.5f)));
-		}
+		CreateBox(scythe::Vector3(0.0f, 0.0f, 0.0f), scythe::Vector3(5.0f, 1.0f, 5.0f), scythe::Vector3(0.1f, 1.0f, 0.2f), 0.0f);
+		CreateSphere(scythe::Vector3(0.0f, 3.0f, 0.0f), 2.0f, scythe::Vector3(1.0f, 0.0f, 0.0f), 0.1f);
+		CreateSphere(scythe::Vector3(0.5f, 5.0f, 0.5f), 1.0f, scythe::Vector3(0.8f, 0.0f, 0.5f), 0.2f);
 		
 		// Load shaders
 		const char *attribs[] = {"a_position"};
@@ -325,7 +271,7 @@ private:
 
 	scythe::Vector3 light_position_;
 
-	std::vector<ObjectInfo> objects_;
+	std::vector<Object> objects_;
 };
 
 DECLARE_MAIN(SandboxApp);
