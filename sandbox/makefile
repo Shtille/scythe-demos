@@ -8,7 +8,8 @@ TARGET_FILE = $(TARGET_PATH)/$(TARGET_NAME)$(TARGET_EXT)
 INCLUDE = \
 	-I$(ROOT_PATH)/scythe/include \
 	-I$(ROOT_PATH)/scythe/src \
-	-I$(ROOT_PATH)/thirdparty/bullet/src
+	-I$(ROOT_PATH)/thirdparty/bullet/src \
+	-I$(ROOT_PATH)/thirdparty/script/src
 DEFINES = 
 
 SRC_DIRS = src
@@ -38,7 +39,7 @@ DEPENDENT_LIBRARIES = scythe
 DEPENDENT_LIB_FILES = $(foreach name,$(DEPENDENT_LIBRARIES),$(patsubst %,$(LIBRARY_PATH)/lib%$(STATIC_LIB_EXT),$(name)))
 
 # C++ flags
-CXXFLAGS := -std=c++11
+CXXFLAGS := -std=c++14
 # C/C++ flags
 CPPFLAGS := -g -Wall -O3
 #CPPFLAGS += -Wextra -pedantic
@@ -46,7 +47,7 @@ CPPFLAGS += $(INCLUDE)
 CPPFLAGS += $(DEFINES)
 # linker flags
 LDFLAGS += -L$(LIBRARY_PATH)
-LDLIBS = -lscythe -lstdc++ -lbullet -lfreetype -ljpeg -lpng -lz
+LDLIBS = -lscript -lbullet -lscythe -lstdc++ -lfreetype -ljpeg -lpng -lz
 ifeq ($(OS),Windows_NT)
 	LDLIBS += -lgdi32 -lglew -lopengl32
 else

@@ -3,11 +3,13 @@
  *
  * Task list.
  * [+] 1. Add possibility of adding objects with custom sizes.
- * [-] 2. Add console and objects addition via its input.
+ * [+] 2. Add console and objects addition via its input.
  * [-] 3. Add mesh-based physical objects (tetrahedron as example).
  */
 
 #include "object.h"
+#include "parser.h"
+#include "console.h"
 
 #include "model/mesh.h"
 #include "graphics/text.h"
@@ -26,6 +28,7 @@
 
 class SandboxApp : public scythe::OpenGlApplication
 				 , public scythe::DesktopInputListener
+				 , public IObjectCreator
 {
 public:
 	SandboxApp()
@@ -35,6 +38,8 @@ public:
 	, box_model_(nullptr)
 	, font_(nullptr)
 	, fps_text_(nullptr)
+	, parser_(nullptr)
+	, console_(nullptr)
 	{
 		SetInputListener(this);
 	}
@@ -84,6 +89,18 @@ public:
 			&params);
 		objects_.push_back(Object(node, color));
 	}
+	void CreateSphere(float pos_x, float pos_y, float pos_z, float radius,
+		float color_x, float color_y, float color_z, float mass) final
+	{
+		CreateSphere(scythe::Vector3(pos_x, pos_y, pos_z), radius, scythe::Vector3(color_x, color_y, color_z), mass);
+	}
+	void CreateBox(float pos_x, float pos_y, float pos_z,
+		float extent_x, float extent_y, float extent_z,
+		float color_x, float color_y, float color_z, float mass) final
+	{
+		CreateBox(scythe::Vector3(pos_x, pos_y, pos_z), scythe::Vector3(extent_x, extent_y, extent_z),
+			scythe::Vector3(color_x, color_y, color_z), mass);
+	}
 	bool Load() final
 	{
 		scythe::PhysicsController::CreateInstance();
@@ -119,6 +136,7 @@ public:
 		const char *attribs[] = {"a_position"};
 		if (!renderer_->AddShader(object_shader_, "data/shaders/sandbox/object", attribs, _countof(attribs))) return false;
 		if (!renderer_->AddShader(text_shader_, "data/shaders/text", attribs, 1)) return false;
+		if (!renderer_->AddShader(gui_shader_, "data/shaders/gui_colored", attribs, 1)) return false;
 
 		renderer_->AddFont(font_, "data/fonts/GoodDog.otf");
 		if (font_ == nullptr)
@@ -127,6 +145,14 @@ public:
 		fps_text_ = scythe::DynamicText::Create(renderer_, 30);
 		if (!fps_text_)
 			return false;
+
+		// Create parser
+		parser_ = new Parser(this);
+
+		// Create console
+		console_ = new Console(renderer_, font_, gui_shader_, text_shader_,
+			0.6f, 0.05f, 0.6f, aspect_ratio_);
+		console_->set_parser(parser_->object());
 
 		// Matrices setup
 		scythe::Matrix4 projection;
@@ -150,6 +176,10 @@ public:
 	}
 	void Unload() final
 	{
+		if (console_)
+			delete console_;
+		if (parser_)
+			delete parser_;
 		if (fps_text_)
 			delete fps_text_;
 		objects_.clear(); // release nodes
@@ -164,6 +194,9 @@ public:
 	void Update() final
 	{
 		BindShaderVariables();
+
+		const float kFrameTime = GetFrameTime();
+		console_->Update(kFrameTime);
 	}
 	void UpdatePhysics(float sec) final
 	{
@@ -203,6 +236,9 @@ public:
 		text_shader_->Uniform4f("u_color", 1.0f, 0.5f, 1.0f, 1.0f);
 		fps_text_->SetText(font_, 0.0f, 0.8f, 0.05f, L"fps: %.2f", GetFrameRate());
 		fps_text_->Render();
+
+		// Draw console
+		console_->Render();
 		
 		renderer_->EnableDepthTest();
 	}
@@ -219,17 +255,32 @@ public:
 	}
 	void OnChar(unsigned short code) final
 	{
-
+		if (console_->IsActive())
+		{
+			console_->ProcessCharInput(code);
+		}
 	}
 	void OnKeyDown(scythe::PublicKey key, int mods) final
 	{
-		if (key == scythe::PublicKey::kF)
+		// Console blocks key input
+		if (console_->IsActive())
 		{
-			ToggleFullscreen();
+			console_->ProcessKeyInput(key, mods);
 		}
-		else if (key == scythe::PublicKey::kEscape)
+		else // process another input
 		{
-			DesktopApplication::Terminate();
+			if (key == scythe::PublicKey::kF)
+			{
+				ToggleFullscreen();
+			}
+			else if (key == scythe::PublicKey::kEscape)
+			{
+				DesktopApplication::Terminate();
+			}
+			else if ((key == scythe::PublicKey::kGraveAccent) && !(mods & scythe::ModifierKey::kShift))
+			{
+				console_->Move();
+			}
 		}
 	}
 	void OnKeyUp(scythe::PublicKey key, int modifiers) final
@@ -263,9 +314,12 @@ private:
 
 	scythe::Shader * object_shader_;
 	scythe::Shader * text_shader_;
+	scythe::Shader * gui_shader_;
 
 	scythe::Font * font_;
 	scythe::DynamicText * fps_text_;
+	Parser * parser_;
+	Console * console_;
 	
 	scythe::Matrix4 projection_view_matrix_;
 
