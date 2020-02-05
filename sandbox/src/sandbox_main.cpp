@@ -107,20 +107,26 @@ public:
 		if (!scythe::PhysicsController::GetInstance()->Initialize())
 			return false;
 
+		// Vertex formats
+		scythe::VertexFormat * object_vertex_format;
+		{
+			scythe::VertexAttribute attributes[] = {
+				scythe::VertexAttribute(scythe::VertexAttribute::kVertex, 3),
+				scythe::VertexAttribute(scythe::VertexAttribute::kNormal, 3)
+			};
+			renderer_->AddVertexFormat(object_vertex_format, attributes, _countof(attributes));
+		}
+
 		// Sphere model
 		sphere_mesh_ = new scythe::Mesh(renderer_);
-		sphere_mesh_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kVertex, 3));
-		sphere_mesh_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kNormal, 3));
 		sphere_mesh_->CreateSphere(1.0f, 128, 64);
-		if (!sphere_mesh_->MakeRenderable())
+		if (!sphere_mesh_->MakeRenderable(object_vertex_format))
 			return false;
 
 		// Box model
 		box_mesh_ = new scythe::Mesh(renderer_);
-		box_mesh_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kVertex, 3));
-		box_mesh_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kNormal, 3));
 		box_mesh_->CreateCube();
-		if (!box_mesh_->MakeRenderable())
+		if (!box_mesh_->MakeRenderable(object_vertex_format))
 			return false;
 
 		// Models

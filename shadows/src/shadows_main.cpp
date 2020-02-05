@@ -55,27 +55,39 @@ public:
 	}
 	bool Load() final
 	{
+		// Vertex formats
+		scythe::VertexFormat * quad_vertex_format;
+		{
+			scythe::VertexAttribute attributes[] = {
+				scythe::VertexAttribute(scythe::VertexAttribute::kVertex, 3)
+			};
+			renderer_->AddVertexFormat(quad_vertex_format, attributes, _countof(attributes));
+		}
+		scythe::VertexFormat * object_vertex_format;
+		{
+			scythe::VertexAttribute attributes[] = {
+				scythe::VertexAttribute(scythe::VertexAttribute::kVertex, 3),
+				scythe::VertexAttribute(scythe::VertexAttribute::kNormal, 3)
+			};
+			renderer_->AddVertexFormat(object_vertex_format, attributes, _countof(attributes));
+		}
+
 		// Quad model
 		quad_ = new scythe::Mesh(renderer_);
-		quad_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kVertex, 3));
 		quad_->CreateQuadFullscreen();
-		if (!quad_->MakeRenderable())
+		if (!quad_->MakeRenderable(quad_vertex_format))
 			return false;
 
 		// Sphere model
 		sphere_ = new scythe::Mesh(renderer_);
-		sphere_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kVertex, 3));
-		sphere_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kNormal, 3));
 		sphere_->CreateSphere(1.0f, 128, 64);
-		if (!sphere_->MakeRenderable())
+		if (!sphere_->MakeRenderable(object_vertex_format))
 			return false;
 
 		// Cube model
 		cube_ = new scythe::Mesh(renderer_);
-		cube_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kVertex, 3));
-		cube_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kNormal, 3));
 		cube_->CreateCube();
-		if (!cube_->MakeRenderable())
+		if (!cube_->MakeRenderable(object_vertex_format))
 			return false;
 		
 		// Load shaders

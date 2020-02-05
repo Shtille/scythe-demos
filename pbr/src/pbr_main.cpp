@@ -57,22 +57,36 @@ public:
 	}
 	bool Load() final
 	{
+		// Vertex formats
+		scythe::VertexFormat * object_vertex_format;
+		{
+			scythe::VertexAttribute attributes[] = {
+				scythe::VertexAttribute(scythe::VertexAttribute::kVertex, 3),
+				scythe::VertexAttribute(scythe::VertexAttribute::kNormal, 3),
+				scythe::VertexAttribute(scythe::VertexAttribute::kTexcoord, 2),
+				scythe::VertexAttribute(scythe::VertexAttribute::kTangent, 3),
+				scythe::VertexAttribute(scythe::VertexAttribute::kBinormal, 3)
+			};
+			renderer_->AddVertexFormat(object_vertex_format, attributes, _countof(attributes));
+		}
+		scythe::VertexFormat * quad_vertex_format;
+		{
+			scythe::VertexAttribute attributes[] = {
+				scythe::VertexAttribute(scythe::VertexAttribute::kVertex, 3)
+			};
+			renderer_->AddVertexFormat(quad_vertex_format, attributes, _countof(attributes));
+		}
+
 		// Sphere model
 		sphere_ = new scythe::Mesh(renderer_);
-		sphere_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kVertex, 3));
-		sphere_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kNormal, 3));
-		sphere_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kTexcoord, 2));
-		sphere_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kTangent, 3));
-		sphere_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kBinormal, 3));
 		sphere_->CreateSphere(1.0f, 128, 64);
-		if (!sphere_->MakeRenderable())
+		if (!sphere_->MakeRenderable(object_vertex_format))
 			return false;
 
 		// Screen quad model
 		quad_ = new scythe::Mesh(renderer_);
-		quad_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kVertex, 3));
 		quad_->CreateQuadFullscreen();
-		if (!quad_->MakeRenderable())
+		if (!quad_->MakeRenderable(quad_vertex_format))
 			return false;
 		
 		// Load shaders

@@ -66,11 +66,19 @@ public:
 	}
 	bool Load() final
 	{
+		// Vertex formats
+		scythe::VertexFormat * object_vertex_format;
+		{
+			scythe::VertexAttribute attributes[] = {
+				scythe::VertexAttribute(scythe::VertexAttribute::kVertex, 3)
+			};
+			renderer_->AddVertexFormat(object_vertex_format, attributes, _countof(attributes));
+		}
+
 		// Quad model
 		quad_ = new scythe::Mesh(renderer_);
-		quad_->AddFormat(scythe::VertexAttribute(scythe::VertexAttribute::kVertex, 3));
 		quad_->CreateQuadFullscreen();
-		if (!quad_->MakeRenderable())
+		if (!quad_->MakeRenderable(object_vertex_format))
 			return false;
 		
 		// Load shaders
