@@ -34,8 +34,10 @@ public:
 	SandboxApp()
 	: sphere_mesh_(nullptr)
 	, box_mesh_(nullptr)
+	, tetra_mesh_(nullptr)
 	, sphere_model_(nullptr)
 	, box_model_(nullptr)
+	, tetra_model_(nullptr)
 	, font_(nullptr)
 	, fps_text_(nullptr)
 	, parser_(nullptr)
@@ -89,6 +91,18 @@ public:
 			&params);
 		objects_.push_back(Object(node, color));
 	}
+	void CreateTetrahedron(const scythe::Vector3& position, float scale, const scythe::Vector3& color, float mass)
+	{
+		scythe::PhysicsRigidBody::Parameters params(mass);
+		scythe::Node * node = scythe::Node::Create("tetrahedron");
+		node->SetTranslation(position);
+		node->SetScale(scale);
+		node->SetDrawable(tetra_model_);
+		node->SetCollisionObject(scythe::PhysicsCollisionObject::kRigidBody,
+			scythe::PhysicsCollisionShape::DefineMesh(tetra_mesh_),
+			&params);
+		objects_.push_back(Object(node, color));
+	}
 	void CreateSphere(float pos_x, float pos_y, float pos_z, float radius,
 		float color_x, float color_y, float color_z, float mass) final
 	{
@@ -117,26 +131,34 @@ public:
 			renderer_->AddVertexFormat(object_vertex_format, attributes, _countof(attributes));
 		}
 
-		// Sphere model
+		// Sphere mesh
 		sphere_mesh_ = new scythe::Mesh(renderer_);
 		sphere_mesh_->CreateSphere(1.0f, 128, 64);
 		if (!sphere_mesh_->MakeRenderable(object_vertex_format))
 			return false;
 
-		// Box model
+		// Box mesh
 		box_mesh_ = new scythe::Mesh(renderer_);
 		box_mesh_->CreateCube();
 		if (!box_mesh_->MakeRenderable(object_vertex_format))
 			return false;
 
+		// Tetrahedron mesh
+		tetra_mesh_ = new scythe::Mesh(renderer_);
+		tetra_mesh_->CreateTetrahedron();
+		if (!tetra_mesh_->MakeRenderable(object_vertex_format, true))
+			return false;
+
 		// Models
 		sphere_model_ = scythe::Model::Create(sphere_mesh_);
 		box_model_ = scythe::Model::Create(box_mesh_);
+		tetra_model_ = scythe::Model::Create(tetra_mesh_);
 
 		// Nodes
 		CreateBox(scythe::Vector3(0.0f, 0.0f, 0.0f), scythe::Vector3(5.0f, 1.0f, 5.0f), scythe::Vector3(0.1f, 1.0f, 0.2f), 0.0f);
 		CreateSphere(scythe::Vector3(0.0f, 3.0f, 0.0f), 2.0f, scythe::Vector3(1.0f, 0.0f, 0.0f), 0.1f);
 		CreateSphere(scythe::Vector3(0.5f, 5.0f, 0.5f), 1.0f, scythe::Vector3(0.8f, 0.0f, 0.5f), 0.2f);
+		CreateTetrahedron(scythe::Vector3(1.5f, 4.0f, 0.5f), 1.0f, scythe::Vector3(0.2f, 0.0f, 1.0f), 0.2f);
 		
 		// Load shaders
 		const char *attribs[] = {"a_position"};
@@ -189,8 +211,10 @@ public:
 		if (fps_text_)
 			delete fps_text_;
 		objects_.clear(); // release nodes
+		SC_SAFE_RELEASE(tetra_model_);
 		SC_SAFE_RELEASE(box_model_);
-		SC_SAFE_RELEASE(sphere_model_)
+		SC_SAFE_RELEASE(sphere_model_);
+		SC_SAFE_RELEASE(tetra_mesh_);
 		SC_SAFE_RELEASE(box_mesh_);
 		SC_SAFE_RELEASE(sphere_mesh_);
 
@@ -314,9 +338,11 @@ public:
 private:
 	scythe::Mesh * sphere_mesh_;
 	scythe::Mesh * box_mesh_;
+	scythe::Mesh * tetra_mesh_;
 
 	scythe::Model * sphere_model_;
 	scythe::Model * box_model_;
+	scythe::Model * tetra_model_;
 
 	scythe::Shader * object_shader_;
 	scythe::Shader * text_shader_;
