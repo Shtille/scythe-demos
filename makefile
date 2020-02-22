@@ -35,7 +35,8 @@ SUBDIRS = \
 	shadows \
 	ray_trace \
 	pbr \
-	sandbox
+	sandbox \
+	marble_maze
 
 ifeq ($(OS),Windows_NT)
 	CREATE_DIR = if not exist $(BINARY_PATH) mkdir $(BINARY_PATH)
