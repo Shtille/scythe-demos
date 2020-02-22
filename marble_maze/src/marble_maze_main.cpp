@@ -67,6 +67,7 @@ public:
 	, update_rotation_y_(false)
 #endif
 	, need_update_projection_matrix_(true)
+	, victory_(false)
 	{
 		SetInputListener(this);
 	}
@@ -165,7 +166,7 @@ public:
 				// Each separate box is being put as mesh part and placed at desired position
 				wall_mesh_->CreatePhysicalBox(data.sizes.x, data.sizes.y, data.sizes.z, kMaterialSize, kMaterialSize, &data.center);
 			}
-			if (!wall_mesh_->MakeRenderable(object_vertex_format))
+			if (!wall_mesh_->MakeRenderable(object_vertex_format, true))
 				return false;
 		}
 
@@ -235,6 +236,8 @@ public:
 				&params);
 			wall_node_ = node;
 			nodes_.push_back(node);
+			// Finally
+			wall_mesh_->CleanUp();
 		}
 		
 		// Load shaders
@@ -336,6 +339,14 @@ public:
 		scythe::PhysicsController::GetInstance()->Deinitialize();
 		scythe::PhysicsController::DestroyInstance();
 	}
+	void WinConditionCheck()
+	{
+		if (ball_node_->GetTranslationY() < 0.0f && !victory_)
+		{
+			victory_ = true;
+			victory_board_->Move();
+		}
+	}
 	void Update() final
 	{
 		const float kFrameTime = GetFrameTime();
@@ -345,10 +356,7 @@ public:
 		// Update UI
 		ui_root_->UpdateAll(kFrameTime);
 
-		if (ball_node_->GetTranslationY() < 0.0f)
-		{
-			victory_board_->Move();
-		}
+		WinConditionCheck();
 
 #ifdef ROTATING_PLATFORM
 		// Update maze rotation
@@ -1012,6 +1020,7 @@ private:
 	bool update_rotation_y_;
 #endif
 	bool need_update_projection_matrix_;
+	bool victory_;
 };
 
 DECLARE_MAIN(MarbleMazeApp);
