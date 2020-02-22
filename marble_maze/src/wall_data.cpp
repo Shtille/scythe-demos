@@ -9,11 +9,11 @@ void GetWallData(std::vector<WallData> * wall_data, float cell_size, float base_
 
 	// Base wall data should be filled manually
 	const WallBaseData walls_base_data[] = {
-		{ -10.f * kCS,   0.f * kCS, -10.f * kCS, -10.f * kCS },
+		{ -10.f * kCS, -10.f * kCS, -10.f * kCS,   0.f * kCS },
 		{ -10.f * kCS, -10.f * kCS,  10.f * kCS, -10.f * kCS },
 		{  10.f * kCS, -10.f * kCS,  10.f * kCS,  10.f * kCS },
-		{  10.f * kCS,  10.f * kCS, -10.f * kCS,  10.f * kCS },
-		{ -10.f * kCS,  10.f * kCS, -10.f * kCS,   1.f * kCS },
+		{ -10.f * kCS,  10.f * kCS,  10.f * kCS,  10.f * kCS },
+		{ -10.f * kCS,   1.f * kCS, -10.f * kCS,  10.f * kCS },
 		// Vertical lines
 		{  -9.f * kCS, -10.f * kCS,  -9.f * kCS,  -8.f * kCS },
 		{  -9.f * kCS,  -6.f * kCS,  -9.f * kCS,  -4.f * kCS },
