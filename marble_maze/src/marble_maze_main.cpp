@@ -25,7 +25,6 @@ namespace {
 #ifdef ROTATING_PLATFORM
 	const float kMaxAngle = 0.5f;
 #endif
-	const float kBallRadius = 1.0f;
 }
 
 /**
@@ -106,6 +105,7 @@ public:
 	}
 	bool Load() final
 	{
+		const float kBallRadius = 1.0f;
 		const float kCS = 10.0f; // cell size
 		const float kMaterialSize = 3.0f;
 		const float kWallWidth = 1.0f;
@@ -189,23 +189,23 @@ public:
 				&params);
 			ball_node_ = node;
 			nodes_.push_back(node);
-			/*
-			ball_->SetFriction(1.28f);
-			ball_->SetRollingFriction(0.2f);
-			ball_->SetSpinningFriction(0.5f);
-			ball_->SetRestitution(0.0f);
-			ball_->DisableDeactivation();
+
+			scythe::PhysicsRigidBody * body = dynamic_cast<scythe::PhysicsRigidBody *>(ball_node_->GetCollisionObject());
+			body->SetFriction(1.28f);
+			body->SetRollingFriction(0.2f);
+			body->SetSpinningFriction(0.5f);
+			body->SetRestitution(0.0f);
+			body->DisableDeactivation();
 
 #ifndef ROTATING_PLATFORM
-			sht::physics::ClampSpeedInfo clamp_speed_info;
+			scythe::PhysicsCollisionObject::SpeedLimitInfo speed_limit_info;
 			const float kMaxLinearVelocity = 3.0f;
-			clamp_speed_info.max_linear_velocity_ = kMaxLinearVelocity;
-			clamp_speed_info.max_angular_velocity_ = kMaxLinearVelocity / kBallRadius; // w = V / R
-			clamp_speed_info.clamp_linear_velocity_ = true;
-			clamp_speed_info.clamp_angular_velocity_ = true;
-			physics_->AddClampedSpeedObject(ball_, clamp_speed_info);
+			speed_limit_info.max_linear_velocity = kMaxLinearVelocity;
+			speed_limit_info.max_angular_velocity = kMaxLinearVelocity / kBallRadius; // w = V / R
+			speed_limit_info.clamp_linear_velocity = true;
+			speed_limit_info.clamp_angular_velocity = true;
+			body->AddSpeedLimit(speed_limit_info);
 #endif
-			*/
 		}
 		// Floor
 		{
