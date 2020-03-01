@@ -19,14 +19,6 @@
 
 #include <cmath>
 
-//#define ROTATING_PLATFORM
-
-namespace {
-#ifdef ROTATING_PLATFORM
-	const float kMaxAngle = 0.5f;
-#endif
-}
-
 /**
  * Defines main application class
  */
@@ -48,23 +40,9 @@ public:
 	, font_(nullptr)
 	, fps_text_(nullptr)
 	, camera_manager_(nullptr)
-#ifdef ROTATING_PLATFORM
-	, target_angle_x_(0.0f)
-	, target_angle_y_(0.0f)
-	, velocity_x_(0.0f)
-	, velocity_y_(0.0f)
-	, acceleration_x_(0.0f)
-	, acceleration_y_(0.0f)
-	, maze_angle_x_(0.0f)
-	, maze_angle_y_(0.0f)
-#endif
 	, camera_distance_(10.0f)
 	, camera_alpha_(0.0f)
 	, camera_theta_(0.5f)
-#ifdef ROTATING_PLATFORM
-	, update_rotation_x_(false)
-	, update_rotation_y_(false)
-#endif
 	, need_update_projection_matrix_(true)
 	, victory_(false)
 	{
@@ -197,7 +175,6 @@ public:
 			body->SetRestitution(0.0f);
 			body->DisableDeactivation();
 
-#ifndef ROTATING_PLATFORM
 			scythe::PhysicsCollisionObject::SpeedLimitInfo speed_limit_info;
 			const float kMaxLinearVelocity = 3.0f;
 			speed_limit_info.max_linear_velocity = kMaxLinearVelocity;
@@ -205,7 +182,6 @@ public:
 			speed_limit_info.clamp_linear_velocity = true;
 			speed_limit_info.clamp_angular_velocity = true;
 			body->AddSpeedLimit(speed_limit_info);
-#endif
 		}
 		// Floor
 		{
@@ -358,11 +334,6 @@ public:
 
 		WinConditionCheck();
 
-#ifdef ROTATING_PLATFORM
-		// Update maze rotation
-		UpdateRotation(kFrameTime);
-#endif
-
 		// Update matrices
 		renderer_->SetViewMatrix(camera_manager_->view_matrix());
 		UpdateProjectionMatrix();
@@ -370,7 +341,6 @@ public:
 
 		BindShaderVariables();
 	}
-#ifndef ROTATING_PLATFORM
 	void ApplyForces(float sec)
 	{
 		const float kPushPower = 10.0f;
@@ -402,12 +372,9 @@ public:
 			body->ApplyForce(force);
 		}
 	}
-#endif
 	void UpdatePhysics(float sec) final
 	{
-#ifndef ROTATING_PLATFORM
 		ApplyForces(sec);
-#endif
 		scythe::PhysicsController::GetInstance()->Update(sec);
 	}
 	void BakeCubemaps()
@@ -564,10 +531,6 @@ public:
 			else
 				victory_board_->Render(); // render only board rect (smart hack for labels :D)
 		}
-#ifdef ROTATING_PLATFORM
-		horizontal_slider_->RenderAll();
-		vertical_slider_->RenderAll();
-#endif
 		
 		renderer_->EnableDepthTest();
 	}
@@ -582,52 +545,6 @@ public:
 		RenderObjects();
 		RenderInterface();
 	}
-#ifdef ROTATING_PLATFORM
-	void UpdateRotation(float frame_time)
-	{
-		const float kDesiredTime = 3.0f;
-		const float kAccuracy = 0.01f;
-		if (update_rotation_x_)
-		{
-			// Calculate desired acceleration to reach the target angle within desired time
-			acceleration_x_ = (target_angle_x_ - maze_angle_x_ - velocity_x_ * kDesiredTime) * 2.0f / (kDesiredTime * kDesiredTime);
-			// Then do Euler integration
-			velocity_x_ += acceleration_x_ * frame_time;
-			maze_angle_x_ += velocity_x_ * frame_time;
-		}
-		if (update_rotation_y_)
-		{
-			// Calculate desired acceleration to reach the target angle within desired time
-			acceleration_y_ = (target_angle_y_ - maze_angle_y_ - velocity_y_ * kDesiredTime) * 2.0f / (kDesiredTime * kDesiredTime);
-			// Then do Euler integration
-			velocity_y_ += acceleration_y_ * frame_time;
-			maze_angle_y_ += velocity_y_ * frame_time;
-		}
-		if (update_rotation_x_ || update_rotation_y_)
-		{
-			UpdateMazeMatrix();
-			// Check if we've reached target angle within accuracy
-			if (update_rotation_x_ && fabs(target_angle_x_ - maze_angle_x_) < kAccuracy)
-			{
-				update_rotation_x_ = false;
-			}
-			if (update_rotation_y_ && fabs(target_angle_y_ - maze_angle_y_) < kAccuracy)
-			{
-				update_rotation_y_ = false;
-			}
-		}
-	}
-	void OnHorizontalSliderMoved()
-	{
-		target_angle_x_ = (horizontal_slider_->pin_position() * 2.0f - 1.0f) * kMaxAngle;
-		update_rotation_x_ = true;
-	}
-	void OnVerticalSliderMoved()
-	{
-		target_angle_y_ = (vertical_slider_->pin_position() * 2.0f - 1.0f) * kMaxAngle;
-		update_rotation_y_ = true;
-	}
-#endif
 	void OnChar(unsigned short code) final
 	{
 	}
@@ -690,19 +607,9 @@ public:
 				info_board_->Move();
 			}
 		}
-#ifdef ROTATING_PLATFORM
-		scythe::Vector2 position(mouse_.x() / height_, mouse_.y() / height_);
-		horizontal_slider_->OnTouchDown(position);
-		vertical_slider_->OnTouchDown(position);
-#endif
 	}
 	void OnMouseUp(scythe::MouseButton button, int modifiers) final
 	{
-#ifdef ROTATING_PLATFORM
-		scythe::Vector2 position(mouse_.x() / height_, mouse_.y() / height_);
-		horizontal_slider_->OnTouchUp(position);
-		vertical_slider_->OnTouchUp(position);
-#endif
 	}
 	void OnMouseMove() final
 	{
@@ -711,14 +618,6 @@ public:
 			info_board_->SelectAll(position.x, position.y);
 		if (victory_board_->IsPosMin())
 			victory_board_->SelectAll(position.x, position.y);
-#ifdef ROTATING_PLATFORM
-		horizontal_slider_->OnTouchMove(position);
-		if (horizontal_slider_->is_touched())
-			OnHorizontalSliderMoved();
-		vertical_slider_->OnTouchMove(position);
-		if (vertical_slider_->is_touched())
-			OnVerticalSliderMoved();
-#endif
 	}
 	void OnScroll(float delta_x, float delta_y) final
 	{
@@ -729,18 +628,6 @@ public:
 		// To have correct perspective when resizing
 		need_update_projection_matrix_ = true;
 	}
-#ifdef ROTATING_PLATFORM
-	void UpdateMazeMatrix()
-	{
-		scythe::Quaternion horizontal(vec3(1.0f, 0.0f, 0.0f), maze_angle_x_);
-		scythe::Quaternion vertical(vec3(0.0f, 0.0f, 1.0f), maze_angle_y_);
-		scythe::Quaternion orient(horizontal * vertical);
-		scythe::Vector3 base_gravity(0.0f, -9.81f, 0.0f);
-		scythe::Vector3 gravity;
-		orient.RotatePoint(base_gravity, &gravity);
-		physics_->SetGravity(gravity);
-	}
-#endif
 	void CreateUI()
 	{
 		scythe::Rect * rect;
@@ -888,49 +775,11 @@ public:
 			label->SetText(kText);
 			label->AlignCenter(rect->width(), rect->height());
 		}
-
-#ifdef ROTATING_PLATFORM
-		// ----- User interaction UI -----
-		const scythe::Vector4 kBarColor(0.5f, 0.5f, 0.5f, 0.5f);
-		const scythe::Vector4 kPinColorNormal(1.0f, 1.0f, 1.0f, 1.0f);
-		const scythe::Vector4 kPinColorTouch(1.0f, 1.0f, 0.0f, 1.0f);
-
-		horizontal_slider_ = new scythe::SliderColored(renderer_, gui_shader_,
-			kBarColor, // vec4 bar_color
-			kPinColorNormal, // vec4 pin_color_normal
-			kPinColorTouch, // vec4 pin_color_touch
-			0.0f, // f32 x
-			0.0f, // f32 y
-			renderer_->aspect_ratio(), // f32 width
-			0.2f, // f32 height
-			0.03f, // f32 bar_radius
-			(U32)scythe::Flags::kRenderAlways, // U32 flags
-			scythe::SliderColored::kCircle, // bar form
-			scythe::SliderColored::kCircle // pin form
-			);
-		horizontal_slider_->SetPinPosition(0.5f);
-		ui_root_->AttachWidget(horizontal_slider_);
-		vertical_slider_ = new scythe::SliderColored(renderer_, gui_shader_,
-			kBarColor, // vec4 bar_color
-			kPinColorNormal, // vec4 pin_color_normal
-			kPinColorTouch, // vec4 pin_color_touch
-			0.0f, // f32 x
-			0.2f, // f32 y
-			0.2f, // f32 width
-			0.8f, // f32 height
-			0.03f, // f32 bar_radius
-			(U32)scythe::Flags::kRenderAlways, // U32 flags
-			scythe::SliderColored::kCircle, // bar form
-			scythe::SliderColored::kCircle // pin form
-			);
-		vertical_slider_->SetPinPosition(0.5f);
-		ui_root_->AttachWidget(vertical_slider_);
-#endif
 	}
 	void UpdateCamera()
 	{
-		scythe::Quaternion horizontal(-scythe::Vector3::UnitY(), camera_alpha_);
-		scythe::Quaternion vertical(-scythe::Vector3::UnitZ(), camera_theta_);
+		scythe::Quaternion horizontal(scythe::Vector3::UnitY(), -camera_alpha_);
+		scythe::Quaternion vertical(scythe::Vector3::UnitZ(), -camera_theta_);
 		scythe::Quaternion orient(horizontal * vertical);
 		const scythe::Vector3 * position_ptr = &ball_node_->GetTranslation();
 		camera_manager_->MakeAttached(orient, position_ptr, camera_distance_);
@@ -991,34 +840,13 @@ private:
 	scythe::ColoredBoard * victory_board_;
 	scythe::Rect * info_ok_rect_;
 	scythe::Rect * victory_exit_rect_;
-#ifdef ROTATING_PLATFORM
-	scythe::SliderColored * horizontal_slider_;
-	scythe::SliderColored * vertical_slider_;
-	sht::math::Matrix4 maze_matrix_;
-#endif
 	
 	scythe::Matrix4 projection_view_matrix_;
-	
-#ifdef ROTATING_PLATFORM
-	// Since slider shouldn't control angle directly we will use target angle
-	float target_angle_x_;
-	float target_angle_y_;
-	float velocity_x_;
-	float velocity_y_;
-	float acceleration_x_;
-	float acceleration_y_;
-	float maze_angle_x_;
-	float maze_angle_y_;
-#endif
 
 	float camera_distance_;
 	float camera_alpha_;
 	float camera_theta_;
 
-#ifdef ROTATING_PLATFORM
-	bool update_rotation_x_;
-	bool update_rotation_y_;
-#endif
 	bool need_update_projection_matrix_;
 	bool victory_;
 };
