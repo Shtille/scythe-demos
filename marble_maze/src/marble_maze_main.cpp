@@ -2,7 +2,6 @@
 
 #include "model/mesh.h"
 #include "graphics/text.h"
-#include "camera.h"
 
 #include "ui/slider.h"
 #include "ui/board.h"
@@ -39,11 +38,17 @@ public:
 	, wall_node_(nullptr)
 	, font_(nullptr)
 	, fps_text_(nullptr)
-	, camera_manager_(nullptr)
 	, camera_distance_(10.0f)
 	, camera_alpha_(0.0f)
 	, camera_theta_(0.5f)
+	, camera_desired_alpha_(0.0f)
+	, camera_desired_theta_(0.5f)
+	, cos_camera_alpha_(1.0f)
+	, sin_camera_alpha_(0.0f)
+	, need_update_camera_alpha_(false)
+	, need_update_camera_theta_(false)
 	, need_update_projection_matrix_(true)
+	, need_update_view_matrix_(true)
 	, victory_(false)
 	{
 		SetInputListener(this);
@@ -78,7 +83,7 @@ public:
 	{
 		object_shader_->Bind();
 		object_shader_->UniformMatrix4fv("u_projection_view", projection_view_matrix_);
-		object_shader_->Uniform3fv("u_camera.position", *camera_manager_->position());
+		object_shader_->Uniform3fv("u_camera.position", camera_position_);
 		object_shader_->Unbind();
 	}
 	bool Load() final
@@ -279,9 +284,8 @@ public:
 		if (!fps_text_)
 			return false;
 
-		// Create camera
-		camera_manager_ = new scythe::CameraManager();
-		UpdateCamera();
+		UpdateCameraOrientation();
+		UpdateCameraPosition();
 
 		CreateUI();
 
@@ -295,7 +299,6 @@ public:
 	void Unload() final
 	{
 		SC_SAFE_DELETE(ui_root_);
-		SC_SAFE_DELETE(camera_manager_);
 		SC_SAFE_DELETE(fps_text_)
 		// Release nodes
 		for (auto node : nodes_)
@@ -327,16 +330,16 @@ public:
 	{
 		const float kFrameTime = GetFrameTime();
 
-		camera_manager_->Update(kFrameTime);
-
 		// Update UI
 		ui_root_->UpdateAll(kFrameTime);
 
 		WinConditionCheck();
 
+		UpdateCamera();
+
 		// Update matrices
-		renderer_->SetViewMatrix(camera_manager_->view_matrix());
 		UpdateProjectionMatrix();
+		UpdateViewMatrix();
 		projection_view_matrix_ = renderer_->projection_matrix() * renderer_->view_matrix();
 
 		BindShaderVariables();
@@ -349,22 +352,26 @@ public:
 		if (keys_.key_down(scythe::PublicKey::kA))
 		{
 			any_key_pressed = true;
-			force.z -= kPushPower;
+			scythe::Vector3 additional_force(kPushPower * sin_camera_alpha_, 0.0f, -kPushPower * cos_camera_alpha_);
+			force += additional_force;
 		}
 		if (keys_.key_down(scythe::PublicKey::kD))
 		{
 			any_key_pressed = true;
-			force.z += kPushPower;
+			scythe::Vector3 additional_force(-kPushPower * sin_camera_alpha_, 0.0f, kPushPower * cos_camera_alpha_);
+			force += additional_force;
 		}
 		if (keys_.key_down(scythe::PublicKey::kS))
 		{
 			any_key_pressed = true;
-			force.x -= kPushPower;
+			scythe::Vector3 additional_force(-kPushPower * cos_camera_alpha_, 0.0f, -kPushPower * sin_camera_alpha_);
+			force += additional_force;
 		}
 		if (keys_.key_down(scythe::PublicKey::kW))
 		{
 			any_key_pressed = true;
-			force.x += kPushPower;
+			scythe::Vector3 additional_force(kPushPower * cos_camera_alpha_, 0.0f, kPushPower * sin_camera_alpha_);
+			force += additional_force;
 		}
 		if (any_key_pressed)
 		{
@@ -565,28 +572,28 @@ public:
 		}
 		else if (key == scythe::PublicKey::kLeft)
 		{
-			camera_alpha_ += kDeltaAngle;
-			UpdateCamera();
+			camera_desired_alpha_ = camera_alpha_ + kDeltaAngle;
+			need_update_camera_alpha_ = true;
 		}
 		else if (key == scythe::PublicKey::kRight)
 		{
-			camera_alpha_ -= kDeltaAngle;
-			UpdateCamera();
+			camera_desired_alpha_ = camera_alpha_ - kDeltaAngle;
+			need_update_camera_alpha_ = true;
 		}
 		else if (key == scythe::PublicKey::kUp)
 		{
 			if (camera_theta_ < 1.4f)
 			{
-				camera_theta_ += kDeltaAngle;
-				UpdateCamera();
+				camera_desired_theta_ = camera_theta_ + kDeltaAngle;
+				need_update_camera_theta_ = true;
 			}
 		}
 		else if (key == scythe::PublicKey::kDown)
 		{
 			if (camera_theta_ > 0.1f)
 			{
-				camera_theta_ -= kDeltaAngle;
-				UpdateCamera();
+				camera_desired_theta_ = camera_theta_ - kDeltaAngle;
+				need_update_camera_theta_ = true;
 			}
 		}
 	}
@@ -776,22 +783,103 @@ public:
 			label->AlignCenter(rect->width(), rect->height());
 		}
 	}
-	void UpdateCamera()
+	void SetCameraAlpha(float value)
+	{
+		camera_alpha_ = value;
+		cos_camera_alpha_ = cos(value);
+		sin_camera_alpha_ = sin(value);
+	}
+	void UpdateCameraOrientation()
 	{
 		scythe::Quaternion horizontal(scythe::Vector3::UnitY(), -camera_alpha_);
 		scythe::Quaternion vertical(scythe::Vector3::UnitZ(), -camera_theta_);
-		scythe::Quaternion orient(horizontal * vertical);
-		const scythe::Vector3 * position_ptr = &ball_node_->GetTranslation();
-		camera_manager_->MakeAttached(orient, position_ptr, camera_distance_);
+		camera_orientation_.Set(horizontal * vertical);
+	}
+	void UpdateCameraPosition()
+	{
+		const scythe::Vector3& target_position = ball_node_->GetTranslation();
+		scythe::Vector3 camera_direction;
+		camera_orientation_.GetDirection(&camera_direction);
+		camera_position_ = target_position - camera_direction * camera_distance_;
+	}
+	void UpdateCamera()
+	{
+		// Update camera animation
+		const float kFrameTime = GetFrameTime();
+		const float kAngleVelocity = 10.0f;
+		const float kDeltaAngle = kAngleVelocity * kFrameTime;
+		bool orientation_update = need_update_camera_alpha_ || need_update_camera_theta_;
+		if (need_update_camera_alpha_)
+		{
+			if (camera_alpha_ < camera_desired_alpha_) // positive angle
+			{
+				if (camera_alpha_ + kDeltaAngle < camera_desired_alpha_)
+					SetCameraAlpha(camera_alpha_ + kDeltaAngle);
+				else
+				{
+					SetCameraAlpha(camera_desired_alpha_);
+					need_update_camera_alpha_ = false;
+				}
+			}
+			else // negative angle
+			{
+				if (camera_alpha_ - kDeltaAngle > camera_desired_alpha_)
+					SetCameraAlpha(camera_alpha_ - kDeltaAngle);
+				else
+				{
+					SetCameraAlpha(camera_desired_alpha_);
+					need_update_camera_alpha_ = false;
+				}
+			}
+		}
+		if (need_update_camera_theta_)
+		{
+			if (camera_theta_ < camera_desired_theta_) // positive angle
+			{
+				if (camera_theta_ + kDeltaAngle < camera_desired_theta_)
+					SetCameraAlpha(camera_theta_ + kDeltaAngle);
+				else
+				{
+					SetCameraAlpha(camera_desired_theta_);
+					need_update_camera_theta_ = false;
+				}
+			}
+			else // negative angle
+			{
+				if (camera_theta_ - kDeltaAngle > camera_desired_theta_)
+					SetCameraAlpha(camera_theta_ - kDeltaAngle);
+				else
+				{
+					SetCameraAlpha(camera_desired_theta_);
+					need_update_camera_theta_ = false;
+				}
+			}
+		}
+		if (orientation_update)
+			UpdateCameraOrientation();
+
+		// Since ball is being moved always we need to update camera position
+		UpdateCameraPosition();
+		need_update_view_matrix_ = true;
 	}
 	void UpdateProjectionMatrix()
 	{
-		if (need_update_projection_matrix_ || camera_manager_->animated())
+		if (need_update_projection_matrix_)
 		{
 			need_update_projection_matrix_ = false;
 			scythe::Matrix4 projection_matrix;
 			scythe::Matrix4::CreatePerspective(45.0f, aspect_ratio_, 0.1f, 100.0f, &projection_matrix);
 			renderer_->SetProjectionMatrix(projection_matrix);
+		}
+	}
+	void UpdateViewMatrix()
+	{
+		if (need_update_view_matrix_)
+		{
+			need_update_view_matrix_ = false;
+			scythe::Matrix4 view_matrix;
+			scythe::Matrix4::CreateView(camera_orientation_, camera_position_, &view_matrix);
+			renderer_->SetViewMatrix(view_matrix);
 		}
 	}
 	
@@ -833,7 +921,6 @@ private:
 
 	scythe::Font * font_;
 	scythe::DynamicText * fps_text_;
-	scythe::CameraManager * camera_manager_;
 
 	scythe::Widget * ui_root_;
 	scythe::ColoredBoard * info_board_;
@@ -843,11 +930,20 @@ private:
 	
 	scythe::Matrix4 projection_view_matrix_;
 
+	scythe::Quaternion camera_orientation_;
+	scythe::Vector3 camera_position_;
 	float camera_distance_;
 	float camera_alpha_;
 	float camera_theta_;
+	float camera_desired_alpha_;
+	float camera_desired_theta_;
+	float cos_camera_alpha_;
+	float sin_camera_alpha_;
+	bool need_update_camera_alpha_;
+	bool need_update_camera_theta_;
 
 	bool need_update_projection_matrix_;
+	bool need_update_view_matrix_;
 	bool victory_;
 };
 
