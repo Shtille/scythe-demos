@@ -41,12 +41,8 @@ public:
 	, camera_distance_(10.0f)
 	, camera_alpha_(0.0f)
 	, camera_theta_(0.5f)
-	, camera_desired_alpha_(0.0f)
-	, camera_desired_theta_(0.5f)
 	, cos_camera_alpha_(1.0f)
 	, sin_camera_alpha_(0.0f)
-	, need_update_camera_alpha_(false)
-	, need_update_camera_theta_(false)
 	, need_update_projection_matrix_(true)
 	, need_update_view_matrix_(true)
 	, victory_(false)
@@ -557,7 +553,6 @@ public:
 	}
 	void OnKeyDown(scythe::PublicKey key, int mods) final
 	{
-		const float kDeltaAngle = 0.1f;
 		if (key == scythe::PublicKey::kF)
 		{
 			DesktopApplication::ToggleFullscreen();
@@ -569,32 +564,6 @@ public:
 		else if (key == scythe::PublicKey::kF5)
 		{
 			renderer_->TakeScreenshot("screenshots");
-		}
-		else if (key == scythe::PublicKey::kLeft)
-		{
-			camera_desired_alpha_ = camera_alpha_ + kDeltaAngle;
-			need_update_camera_alpha_ = true;
-		}
-		else if (key == scythe::PublicKey::kRight)
-		{
-			camera_desired_alpha_ = camera_alpha_ - kDeltaAngle;
-			need_update_camera_alpha_ = true;
-		}
-		else if (key == scythe::PublicKey::kUp)
-		{
-			if (camera_theta_ < 1.4f)
-			{
-				camera_desired_theta_ = camera_theta_ + kDeltaAngle;
-				need_update_camera_theta_ = true;
-			}
-		}
-		else if (key == scythe::PublicKey::kDown)
-		{
-			if (camera_theta_ > 0.1f)
-			{
-				camera_desired_theta_ = camera_theta_ - kDeltaAngle;
-				need_update_camera_theta_ = true;
-			}
 		}
 	}
 	void OnKeyUp(scythe::PublicKey key, int modifiers) final
@@ -804,55 +773,35 @@ public:
 	}
 	void UpdateCamera()
 	{
-		// Update camera animation
 		const float kFrameTime = GetFrameTime();
-		const float kAngleVelocity = 10.0f;
+		const float kAngleVelocity = 1.0f;
 		const float kDeltaAngle = kAngleVelocity * kFrameTime;
-		bool orientation_update = need_update_camera_alpha_ || need_update_camera_theta_;
-		if (need_update_camera_alpha_)
+
+		bool orientation_update = false;
+		if (keys_.key_down(scythe::PublicKey::kLeft))
 		{
-			if (camera_alpha_ < camera_desired_alpha_) // positive angle
+			SetCameraAlpha(camera_alpha_ + kDeltaAngle);
+			orientation_update = true;
+		}
+		else if (keys_.key_down(scythe::PublicKey::kRight))
+		{
+			SetCameraAlpha(camera_alpha_ - kDeltaAngle);
+			orientation_update = true;
+		}
+		else if (keys_.key_down(scythe::PublicKey::kUp))
+		{
+			if (camera_theta_ + kDeltaAngle < 1.4f)
 			{
-				if (camera_alpha_ + kDeltaAngle < camera_desired_alpha_)
-					SetCameraAlpha(camera_alpha_ + kDeltaAngle);
-				else
-				{
-					SetCameraAlpha(camera_desired_alpha_);
-					need_update_camera_alpha_ = false;
-				}
-			}
-			else // negative angle
-			{
-				if (camera_alpha_ - kDeltaAngle > camera_desired_alpha_)
-					SetCameraAlpha(camera_alpha_ - kDeltaAngle);
-				else
-				{
-					SetCameraAlpha(camera_desired_alpha_);
-					need_update_camera_alpha_ = false;
-				}
+				camera_theta_ += kDeltaAngle;
+				orientation_update = true;
 			}
 		}
-		if (need_update_camera_theta_)
+		else if (keys_.key_down(scythe::PublicKey::kDown))
 		{
-			if (camera_theta_ < camera_desired_theta_) // positive angle
+			if (camera_theta_ > kDeltaAngle + 0.1f)
 			{
-				if (camera_theta_ + kDeltaAngle < camera_desired_theta_)
-					SetCameraAlpha(camera_theta_ + kDeltaAngle);
-				else
-				{
-					SetCameraAlpha(camera_desired_theta_);
-					need_update_camera_theta_ = false;
-				}
-			}
-			else // negative angle
-			{
-				if (camera_theta_ - kDeltaAngle > camera_desired_theta_)
-					SetCameraAlpha(camera_theta_ - kDeltaAngle);
-				else
-				{
-					SetCameraAlpha(camera_desired_theta_);
-					need_update_camera_theta_ = false;
-				}
+				camera_theta_ -= kDeltaAngle;
+				orientation_update = true;
 			}
 		}
 		if (orientation_update)
@@ -935,12 +884,8 @@ private:
 	float camera_distance_;
 	float camera_alpha_;
 	float camera_theta_;
-	float camera_desired_alpha_;
-	float camera_desired_theta_;
 	float cos_camera_alpha_;
 	float sin_camera_alpha_;
-	bool need_update_camera_alpha_;
-	bool need_update_camera_theta_;
 
 	bool need_update_projection_matrix_;
 	bool need_update_view_matrix_;
