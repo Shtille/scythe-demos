@@ -7,7 +7,7 @@ in DATA
 	vec3 position;
 	mat3 tbn;
 	vec2 uv;
-	//vec4 shadow_coord;
+	vec4 shadow_coord;
 } fs_in;
 
 struct Camera
@@ -35,6 +35,8 @@ uniform sampler2D u_normal_sampler;
 uniform sampler2D u_roughness_sampler;
 uniform sampler2D u_metal_sampler;
 
+uniform sampler2DShadow u_shadow_sampler;
+
 // Encapsulate the various inputs used by the various functions in the shading equation
 // We store values in this struct to simplify the integration of alternative implementations
 // of the shading terms, outlined in the Readme.MD Appendix.
@@ -57,7 +59,6 @@ struct PBRInfo
 const float PI = 3.141592653589793;
 #define GAMMA 2.2
 
-/*
 // Used for shadows
 vec2 poissonDisk[16] = vec2[](
 	vec2(-0.94201624, -0.39906216),
@@ -83,7 +84,6 @@ float random(vec3 seed, int i)
  float dot_product = dot(seed4, vec4(12.9898, 78.233, 45.164, 94.673));
  return fract(sin(dot_product) * 43758.5453);
 }
-*/
 
 vec4 SrgbToLinear(vec4 srgb_in)
 {
@@ -232,17 +232,16 @@ void main()
 	// Calculate lighting contribution from image based lighting source (IBL)
 	color += GetIBLContribution(pbr_inputs, n, reflection);
 
-	/*
 	// Shadows
 	float bias = 0.005;
 	float visibility = 1.0;
+	vec4 shadow = fs_in.shadow_coord;
 	for (int i = 0; i < 1; i++)
 	{
 		int index = int(16.0 * random(floor(fs_in.position * 1000.0), i)) % 16;
-		visibility -= (1.0 / 4.0) * (1.0 - texture(u_shadow_map, vec3(fs_in.shadow_coord.xy + poissonDisk[index] / 700.0, (fs_in.shadow_coord.z - bias) / fs_in.shadow_coord.w)));
+		visibility -= (1.0 / 4.0) * (1.0 - texture(u_shadow_sampler, vec3(shadow.xy + poissonDisk[index] / 700.0, (shadow.z - bias) / shadow.w)));
 	}
 	color *= visibility;
-	*/
 
 	out_color = vec4(pow(color, vec3(1.0/GAMMA)), base_color.a);
 }

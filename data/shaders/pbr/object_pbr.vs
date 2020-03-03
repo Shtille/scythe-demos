@@ -8,14 +8,14 @@ layout(location = 4) in vec3 a_binormal;
 
 uniform mat4 u_projection_view;
 uniform mat4 u_model;
-//uniform mat4 u_depth_bias_mvp;
+uniform mat4 u_depth_bias_projection_view;
 
 out DATA
 {
 	vec3 position;
 	mat3 tbn;
 	vec2 uv;
-	//vec4 shadow_coord;
+	vec4 shadow_coord;
 } vs_out;
 
 void main()
@@ -30,7 +30,7 @@ void main()
 	vs_out.position = vec3(position_world);
 	vs_out.tbn = mat3(tangent, binormal, normal);
 	vs_out.uv = a_texcoord;
-	//vs_out.shadow_coord = u_depth_bias_mvp * position_world;
+	vs_out.shadow_coord = u_depth_bias_projection_view * position_world;
 
 	gl_Position = u_projection_view * position_world;
 }
