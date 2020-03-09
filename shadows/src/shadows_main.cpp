@@ -27,6 +27,7 @@ public:
 	, light_distance_(10.0f)
 	, need_update_projection_matrix_(true)
 	, show_shadow_texture_(false)
+	, is_vsm_(true)
 	{
 		SetInputListener(this);
 	}
@@ -93,12 +94,26 @@ public:
 		// Load shaders
 		if (!renderer_->AddShader(text_shader_, "data/shaders/text")) return false;
 		if (!renderer_->AddShader(quad_shader_, "data/shaders/quad")) return false;
-		if (!renderer_->AddShader(object_shader_, "data/shaders/shadows/object")) return false;
-		if (!renderer_->AddShader(object_shadow_shader_, "data/shaders/shadows/object_shadow")) return false;
+		if (is_vsm_)
+		{
+			if (!renderer_->AddShader(object_shader_, "data/shaders/shadows/object_vsm")) return false;
+			if (!renderer_->AddShader(object_shadow_shader_, "data/shaders/shadows/depth_vsm")) return false;
+		}
+		else
+		{
+			if (!renderer_->AddShader(object_shader_, "data/shaders/shadows/object")) return false;
+			if (!renderer_->AddShader(object_shadow_shader_, "data/shaders/shadows/object_shadow")) return false;
+		}
 
 		// Render targets
 		const int kFramebufferSize = 1024;
-		renderer_->CreateTextureDepth(shadow_depth_rt_, kFramebufferSize, kFramebufferSize, 32);
+		if (is_vsm_)
+		{
+			renderer_->AddRenderTarget(shadow_color_rt_, kFramebufferSize, kFramebufferSize, scythe::Image::Format::kRG32);
+			renderer_->AddRenderDepthStencil(shadow_depth_rt_, kFramebufferSize, kFramebufferSize, 32, 0);
+		}
+		else
+			renderer_->CreateTextureDepth(shadow_depth_rt_, kFramebufferSize, kFramebufferSize, 32);
 
 		// Fonts
 		renderer_->AddFont(font_, "data/fonts/GoodDog.otf");
@@ -213,7 +228,10 @@ public:
 		);
 		depth_bias_projection_view_matrix_ = bias_matrix * depth_projection_view;
 
-		renderer_->ChangeRenderTarget(nullptr, shadow_depth_rt_);
+		if (is_vsm_)
+			renderer_->ChangeRenderTarget(shadow_color_rt_, shadow_depth_rt_);
+		else
+			renderer_->ChangeRenderTarget(nullptr, shadow_depth_rt_);
 		renderer_->ClearColorAndDepthBuffers();
 
 		object_shadow_shader_->Bind();
@@ -237,7 +255,10 @@ public:
 			quad_shader_->Bind();
 			quad_shader_->Uniform1i("u_texture", 0);
 
-			renderer_->ChangeTexture(shadow_depth_rt_, 0);
+			if (is_vsm_)
+				renderer_->ChangeTexture(shadow_color_rt_, 0);
+			else
+				renderer_->ChangeTexture(shadow_depth_rt_, 0);
 			quad_->Render();
 			renderer_->ChangeTexture(nullptr, 0);
 
@@ -250,7 +271,10 @@ public:
 			object_shader_->UniformMatrix4fv("u_projection_view", projection_view_matrix_);
 			object_shader_->UniformMatrix4fv("u_depth_bias_projection_view", depth_bias_projection_view_matrix_);
 
-			renderer_->ChangeTexture(shadow_depth_rt_, 0);
+			if (is_vsm_)
+				renderer_->ChangeTexture(shadow_color_rt_, 0);
+			else
+				renderer_->ChangeTexture(shadow_depth_rt_, 0);
 
 			RenderObjects(object_shader_);
 
@@ -365,6 +389,7 @@ private:
 	scythe::Shader * object_shader_;
 	scythe::Shader * object_shadow_shader_; //!< simplified version for shadows generation
 
+	scythe::Texture * shadow_color_rt_;
 	scythe::Texture * shadow_depth_rt_;
 
 	scythe::Font * font_;
@@ -380,6 +405,7 @@ private:
 
 	bool need_update_projection_matrix_;
 	bool show_shadow_texture_;
+	const bool is_vsm_;
 };
 
 DECLARE_MAIN(APP_NAME);
