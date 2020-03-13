@@ -52,11 +52,16 @@ void main()
 	float lambertian = clamp(dot(light, normal), 0.0, 1.0);
 	diffuse += lambertian * u_light.color;
 
+	// Shadows factor
 	shadow_coord_post_w = fs_in.shadow_coord / fs_in.shadow_coord.w;
-	//float visibility = ChebyshevUpperBound(shadow_coord_post_w.z);
 	float visibility = 1.0;
-	if (texture(u_shadow_sampler, shadow_coord_post_w.xy).x < shadow_coord_post_w.z)
-		visibility = 0.5;
+	bool outside_shadow_map = fs_in.shadow_coord.w <= 0.0 ||
+		(shadow_coord_post_w.x <  0.0 || shadow_coord_post_w.y <  0.0) ||
+		(shadow_coord_post_w.x >= 1.0 || shadow_coord_post_w.y >= 1.0);
+	if (!outside_shadow_map)
+	{
+		visibility = ChebyshevUpperBound(shadow_coord_post_w.z);
+	}
 
 	vec3 color_linear = ambient + (diffuse) * visibility;
 	vec3 color_corrected = pow(color_linear, vec3(1.0/kScreenGamma));

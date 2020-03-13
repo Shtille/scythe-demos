@@ -9,6 +9,9 @@
 /*
 The main concept of creating this application is testing cubemap edge artefacts during accessing mipmaps.
 */
+namespace {
+	const int kShadowMapSize = 1024;
+}
 
 #define APP_NAME ShadowsApp
 
@@ -42,6 +45,15 @@ public:
 	void BindShaderConstants()
 	{
 		const scythe::Vector3 kLightColor(1.0f);
+
+		quad_shader_->Bind();
+		quad_shader_->Uniform1i("u_texture", 0);
+
+		if (is_vsm_)
+		{
+			blur_shader_->Bind();
+			blur_shader_->Uniform1i("u_texture", 0);
+		}
 
 		object_shader_->Bind();
 		object_shader_->Uniform3fv("u_light.color", kLightColor);
@@ -98,6 +110,7 @@ public:
 		{
 			if (!renderer_->AddShader(object_shader_, "data/shaders/shadows/object_vsm")) return false;
 			if (!renderer_->AddShader(object_shadow_shader_, "data/shaders/shadows/depth_vsm")) return false;
+			if (!renderer_->AddShader(blur_shader_, "data/shaders/blur")) return false;
 		}
 		else
 		{
@@ -106,14 +119,14 @@ public:
 		}
 
 		// Render targets
-		const int kFramebufferSize = 1024;
 		if (is_vsm_)
 		{
-			renderer_->AddRenderTarget(shadow_color_rt_, kFramebufferSize, kFramebufferSize, scythe::Image::Format::kRG32);
-			renderer_->AddRenderDepthStencil(shadow_depth_rt_, kFramebufferSize, kFramebufferSize, 32, 0);
+			renderer_->AddRenderTarget(shadow_color_rt_, kShadowMapSize, kShadowMapSize, scythe::Image::Format::kRG32);
+			renderer_->AddRenderDepthStencil(shadow_depth_rt_, kShadowMapSize, kShadowMapSize, 32, 0);
+			renderer_->AddRenderTarget(blur_color_rt_, kShadowMapSize, kShadowMapSize, scythe::Image::Format::kRG32);
 		}
 		else
-			renderer_->CreateTextureDepth(shadow_depth_rt_, kFramebufferSize, kFramebufferSize, 32);
+			renderer_->CreateTextureDepth(shadow_depth_rt_, kShadowMapSize, kShadowMapSize, 32);
 
 		// Fonts
 		renderer_->AddFont(font_, "data/fonts/GoodDog.otf");
@@ -206,8 +219,8 @@ public:
 	{
 		// Generate matrix for shadows
 		// Ortho matrix is used for directional light sources and perspective for spot ones.
-		float znear = light_distance_ - 2.0f;
-		float zfar = light_distance_ + 2.0f;
+		float znear = 1.0f;
+		float zfar = light_distance_ * 2.0f;
 		scythe::Matrix4 depth_projection;
 		scythe::Matrix4::CreatePerspective(45.0f, 1.0f, znear, zfar, &depth_projection);
 		scythe::Matrix4 depth_view;
@@ -242,18 +255,53 @@ public:
 		object_shadow_shader_->Unbind();
 
 		renderer_->ChangeRenderTarget(nullptr, nullptr);
+
+		if (is_vsm_)
+		{
+			const float kBlurScale = 1.0f;
+			const float kBlurSize = kBlurScale / static_cast<float>(kShadowMapSize);
+
+			renderer_->DisableDepthTest();
+			blur_shader_->Bind();
+
+			// Blur horizontally
+			renderer_->ChangeRenderTarget(blur_color_rt_, nullptr);
+			renderer_->ChangeTexture(shadow_color_rt_, 0);
+			renderer_->ClearColorBuffer();
+			blur_shader_->Uniform2f("u_scale", kBlurSize, 0.0f);
+			quad_->Render();
+
+			// Blur vertically
+			renderer_->ChangeRenderTarget(shadow_color_rt_, nullptr);
+			renderer_->ChangeTexture(blur_color_rt_, 0);
+			renderer_->ClearColorBuffer();
+			blur_shader_->Uniform2f("u_scale", 0.0f, kBlurSize);
+			quad_->Render();
+
+			// Back to main framebuffer
+			renderer_->ChangeRenderTarget(nullptr, nullptr);
+
+			blur_shader_->Unbind();
+			renderer_->EnableDepthTest();
+		}
 	}
 	void RenderScene()
 	{
 		// First render shadows
-		renderer_->CullFace(scythe::CullFaceType::kFront);
-		ShadowPass();
-		renderer_->CullFace(scythe::CullFaceType::kBack);
+		if (is_vsm_)
+		{
+			ShadowPass();
+		}
+		else
+		{
+			renderer_->CullFace(scythe::CullFaceType::kFront);
+			ShadowPass();
+			renderer_->CullFace(scythe::CullFaceType::kBack);
+		}
 
 		if (show_shadow_texture_)
 		{
 			quad_shader_->Bind();
-			quad_shader_->Uniform1i("u_texture", 0);
 
 			if (is_vsm_)
 				renderer_->ChangeTexture(shadow_color_rt_, 0);
@@ -388,9 +436,11 @@ private:
 	scythe::Shader * quad_shader_;
 	scythe::Shader * object_shader_;
 	scythe::Shader * object_shadow_shader_; //!< simplified version for shadows generation
+	scythe::Shader * blur_shader_;
 
 	scythe::Texture * shadow_color_rt_;
 	scythe::Texture * shadow_depth_rt_;
+	scythe::Texture * blur_color_rt_;
 
 	scythe::Font * font_;
 	scythe::DynamicText * fps_text_;
