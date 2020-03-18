@@ -23,6 +23,7 @@ struct Light
 
 uniform Camera u_camera;
 uniform Light u_light;
+uniform float u_shadow_scale; // determines how much shadow we want [0; 1]
 
 // PBR Inputs
 uniform samplerCube u_diffuse_env_sampler;
@@ -35,7 +36,7 @@ uniform sampler2D u_normal_sampler;
 uniform sampler2D u_roughness_sampler;
 uniform sampler2D u_metal_sampler;
 
-uniform sampler2DShadow u_shadow_sampler;
+uniform sampler2D u_shadow_sampler;
 
 // Encapsulate the various inputs used by the various functions in the shading equation
 // We store values in this struct to simplify the integration of alternative implementations
@@ -161,6 +162,33 @@ float MicrofacetDistribution(PBRInfo pbr_inputs)
 	return roughnessSq / (PI * f * f);
 }
 
+// Compute visibility for shadow factor using Chebyshev's equation
+float GetVisibility()
+{
+	vec4 shadow_coord_post_w = fs_in.shadow_coord / fs_in.shadow_coord.w;
+	// Check if we outside the shadow map
+	if (fs_in.shadow_coord.w <= 0.0 ||
+		(shadow_coord_post_w.x <  0.0 || shadow_coord_post_w.y <  0.0) ||
+		(shadow_coord_post_w.x >= 1.0 || shadow_coord_post_w.y >= 1.0))
+		return 1.0;
+	// We retrive the two moments previously stored (depth and depth*depth)
+	vec2 moments = texture(u_shadow_sampler, shadow_coord_post_w.xy).rg;
+	
+	// Surface is fully lit. as the current fragment is before the light occluder
+	if (shadow_coord_post_w.z <= moments.x)
+		return 1.0;
+
+	// The fragment is either in shadow or penumbra. We now use Chebyshev's upper bound to check
+	// How likely this pixel is to be lit (p_max)
+	float variance = moments.y - (moments.x * moments.x);
+	variance = max(variance, 0.00002);
+
+	float d = shadow_coord_post_w.z - moments.x;
+	float p_max = variance / (variance + d*d);
+
+	return p_max;
+}
+
 void main()
 {
 	// Roughness
@@ -232,15 +260,8 @@ void main()
 	// Calculate lighting contribution from image based lighting source (IBL)
 	color += GetIBLContribution(pbr_inputs, n, reflection);
 
-	// Shadows
-	float bias = 0.005;
-	float visibility = 1.0;
-	vec4 shadow = fs_in.shadow_coord;
-	for (int i = 0; i < 1; i++)
-	{
-		int index = int(16.0 * random(floor(fs_in.position * 1000.0), i)) % 16;
-		visibility -= (1.0 / 4.0) * (1.0 - texture(u_shadow_sampler, vec3(shadow.xy + poissonDisk[index] / 700.0, (shadow.z - bias) / shadow.w)));
-	}
+	// Calculate shadow factor
+	float visibility = 1.0 - u_shadow_scale * (1.0 - GetVisibility());
 	color *= visibility;
 
 	out_color = vec4(pow(color, vec3(1.0/GAMMA)), base_color.a);

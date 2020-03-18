@@ -9,7 +9,9 @@
 /*
 PBR shader to use in application
 */
-//#define TEST
+namespace {
+	const int kShadowMapSize = 1024;
+}
 
 #define APP_NAME PbrApp
 
@@ -42,18 +44,17 @@ public:
 	{
 		env_shader_->Bind();
 		env_shader_->Uniform1i("u_texture", 0);
-#ifdef TEST
-		const scythe::Vector3 kLightColor(1.0f);
 
-		object_shader_->Bind();
-		object_shader_->Uniform3fv("u_light.color", kLightColor);
-		object_shader_->Uniform1i("u_shadow_sampler", 0);
-		object_shader_->Unbind();
-#else
+		quad_shader_->Bind();
+		quad_shader_->Uniform1i("u_texture", 0);
+
+		blur_shader_->Bind();
+		blur_shader_->Uniform1i("u_texture", 0);
+
 		object_shader_->Bind();
 		object_shader_->Uniform3f("u_light.color", 1.0f, 1.0f, 1.0f);
 		object_shader_->Uniform3f("u_light.direction", 1.0f, 1.0f, -1.0f);
-
+		object_shader_->Uniform1f("u_shadow_scale", 0.4f);
 		object_shader_->Uniform1i("u_diffuse_env_sampler", 0);
 		object_shader_->Uniform1i("u_specular_env_sampler", 1);
 		object_shader_->Uniform1i("u_preintegrated_fg_sampler", 2);
@@ -63,15 +64,9 @@ public:
 		object_shader_->Uniform1i("u_metal_sampler", 6);
 		object_shader_->Uniform1i("u_shadow_sampler", 7);
 		object_shader_->Unbind();
-#endif
 	}
 	void BindShaderVariables()
 	{
-#ifdef TEST
-		object_shader_->Bind();
-		object_shader_->Uniform3fv("u_light.position", light_position_);
-		object_shader_->Unbind();
-#endif
 	}
 	bool Load() final
 	{
@@ -115,12 +110,9 @@ public:
 		if (!renderer_->AddShader(irradiance_shader_, "data/shaders/pbr/irradiance")) return false;
 		if (!renderer_->AddShader(prefilter_shader_, "data/shaders/pbr/prefilter")) return false;
 		if (!renderer_->AddShader(integrate_shader_, "data/shaders/pbr/integrate")) return false;
-#ifdef TEST
-		if (!renderer_->AddShader(object_shader_, "data/shaders/shadows/object")) return false;
-#else
 		if (!renderer_->AddShader(object_shader_, "data/shaders/pbr/object_pbr")) return false;
-#endif
-		if (!renderer_->AddShader(object_shadow_shader_, "data/shaders/shadows/object_shadow")) return false;
+		if (!renderer_->AddShader(object_shadow_shader_, "data/shaders/shadows/depth_vsm")) return false;
+		if (!renderer_->AddShader(blur_shader_, "data/shaders/blur")) return false;
 		
 		// Load textures
 		const char * cubemap_filenames[6] = {
@@ -149,14 +141,13 @@ public:
 								   scythe::Texture::Filter::kTrilinearAniso)) return false;
 
 		// Render targets
-#ifndef TEST
 		renderer_->CreateTextureCubemap(irradiance_rt_, 32, 32, scythe::Image::Format::kRGB8, scythe::Texture::Filter::kLinear);
 		renderer_->CreateTextureCubemap(prefilter_rt_, 512, 512, scythe::Image::Format::kRGB8, scythe::Texture::Filter::kTrilinear);
 		renderer_->GenerateMipmap(prefilter_rt_);
 		renderer_->AddRenderTarget(integrate_rt_, 512, 512, scythe::Image::Format::kRGB8); // RG16
-#endif
-		const int kFramebufferSize = 1024;
-		renderer_->CreateTextureDepth(shadow_depth_rt_, kFramebufferSize, kFramebufferSize, 32);
+		renderer_->AddRenderTarget(shadow_color_rt_, kShadowMapSize, kShadowMapSize, scythe::Image::Format::kRG32);
+		renderer_->AddRenderDepthStencil(shadow_depth_rt_, kShadowMapSize, kShadowMapSize, 32, 0);
+		renderer_->AddRenderTarget(blur_color_rt_, kShadowMapSize, kShadowMapSize, scythe::Image::Format::kRG32);
 
 		renderer_->AddFont(font_, "data/fonts/GoodDog.otf");
 		if (font_ == nullptr)
@@ -172,9 +163,7 @@ public:
 		// Finally bind constants
 		BindShaderConstants();
 
-#ifndef TEST
 		BakeCubemaps();
-#endif
 		
 		return true;
 	}
@@ -283,9 +272,6 @@ public:
 	{
 		if (normal_mode)
 		{
-#ifdef TEST
-			renderer_->ChangeTexture(shadow_depth_rt_, 0);
-#else
 			renderer_->ChangeTexture(irradiance_rt_, 0);
 			renderer_->ChangeTexture(prefilter_rt_, 1);
 			renderer_->ChangeTexture(fg_texture_, 2);
@@ -293,8 +279,7 @@ public:
 			renderer_->ChangeTexture(normal_texture_, 4);
 			renderer_->ChangeTexture(roughness_texture_, 5);
 			renderer_->ChangeTexture(metal_texture_, 6);
-			renderer_->ChangeTexture(shadow_depth_rt_, 7);
-#endif
+			renderer_->ChangeTexture(shadow_color_rt_, 7);
 		}
 	
 		renderer_->PushMatrix();
@@ -317,9 +302,6 @@ public:
 
 		if (normal_mode)
 		{
-#ifdef TEST
-			renderer_->ChangeTexture(nullptr, 0);
-#else
 			renderer_->ChangeTexture(nullptr, 7);
 			renderer_->ChangeTexture(nullptr, 6);
 			renderer_->ChangeTexture(nullptr, 5);
@@ -328,17 +310,14 @@ public:
 			renderer_->ChangeTexture(nullptr, 2);
 			renderer_->ChangeTexture(nullptr, 1);
 			renderer_->ChangeTexture(nullptr, 0);
-#endif
 		}
 	}
 	void ShadowPass()
 	{
 		// Generate matrix for shadows
 		// Ortho matrix is used for directional light sources and perspective for spot ones.
-		float znear = light_distance_ - 4.0f;
-		float zfar = light_distance_ + 4.0f;
 		scythe::Matrix4 depth_projection;
-		scythe::Matrix4::CreatePerspective(45.0f, 1.0f, znear, zfar, &depth_projection);
+		scythe::Matrix4::CreateOrthographic(10.0f, 10.0f, 0.0f, 20.0f, &depth_projection);
 		scythe::Matrix4 depth_view;
 		scythe::Matrix4::CreateLookAt(light_position_, scythe::Vector3(0.0f), scythe::Vector3::UnitY(), &depth_view);
 		scythe::Matrix4 depth_projection_view = depth_projection * depth_view;
@@ -357,7 +336,7 @@ public:
 		);
 		depth_bias_projection_view_matrix_ = bias_matrix * depth_projection_view;
 
-		renderer_->ChangeRenderTarget(nullptr, shadow_depth_rt_);
+		renderer_->ChangeRenderTarget(shadow_color_rt_, shadow_depth_rt_);
 		renderer_->ClearColorAndDepthBuffers();
 
 		object_shadow_shader_->Bind();
@@ -368,20 +347,43 @@ public:
 		object_shadow_shader_->Unbind();
 
 		renderer_->ChangeRenderTarget(nullptr, nullptr);
+
+		const float kBlurScale = 1.0f;
+		const float kBlurSize = kBlurScale / static_cast<float>(kShadowMapSize);
+
+		renderer_->DisableDepthTest();
+		blur_shader_->Bind();
+
+		// Blur horizontally
+		renderer_->ChangeRenderTarget(blur_color_rt_, nullptr);
+		renderer_->ChangeTexture(shadow_color_rt_, 0);
+		renderer_->ClearColorBuffer();
+		blur_shader_->Uniform2f("u_scale", kBlurSize, 0.0f);
+		quad_->Render();
+
+		// Blur vertically
+		renderer_->ChangeRenderTarget(shadow_color_rt_, nullptr);
+		renderer_->ChangeTexture(blur_color_rt_, 0);
+		renderer_->ClearColorBuffer();
+		blur_shader_->Uniform2f("u_scale", 0.0f, kBlurSize);
+		quad_->Render();
+
+		// Back to main framebuffer
+		renderer_->ChangeRenderTarget(nullptr, nullptr);
+
+		blur_shader_->Unbind();
+		renderer_->EnableDepthTest();
 	}
 	void RenderScene()
 	{
 		// First render shadows
-		renderer_->CullFace(scythe::CullFaceType::kFront);
 		ShadowPass();
-		renderer_->CullFace(scythe::CullFaceType::kBack);
 
 		if (show_shadow_texture_)
 		{
 			quad_shader_->Bind();
-			quad_shader_->Uniform1i("u_texture", 0);
 
-			renderer_->ChangeTexture(shadow_depth_rt_, 0);
+			renderer_->ChangeTexture(shadow_color_rt_, 0);
 			quad_->Render();
 			renderer_->ChangeTexture(nullptr, 0);
 
@@ -393,9 +395,7 @@ public:
 			object_shader_->Bind();
 			object_shader_->UniformMatrix4fv("u_projection_view", projection_view_matrix_);
 			object_shader_->UniformMatrix4fv("u_depth_bias_projection_view", depth_bias_projection_view_matrix_);
-#ifndef TEST
 			object_shader_->Uniform3fv("u_camera.position", *camera_manager_->position());
-#endif
 
 			RenderObjects(object_shader_, true);
 
@@ -422,9 +422,7 @@ public:
 		renderer_->ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 		renderer_->ClearColorAndDepthBuffers();
 		
-#ifndef TEST
 		RenderEnvironment();
-#endif
 		RenderScene();
 		RenderInterface();
 	}
@@ -512,6 +510,7 @@ private:
 	scythe::Shader * irradiance_shader_;
 	scythe::Shader * prefilter_shader_;
 	scythe::Shader * integrate_shader_;
+	scythe::Shader * blur_shader_;
 
 	scythe::Texture * env_texture_;
 	scythe::Texture * albedo_texture_;
@@ -522,7 +521,9 @@ private:
 	scythe::Texture * irradiance_rt_;
 	scythe::Texture * prefilter_rt_;
 	scythe::Texture * integrate_rt_;
+	scythe::Texture * shadow_color_rt_;
 	scythe::Texture * shadow_depth_rt_;
+	scythe::Texture * blur_color_rt_;
 
 	scythe::Font * font_;
 	scythe::DynamicText * fps_text_;
