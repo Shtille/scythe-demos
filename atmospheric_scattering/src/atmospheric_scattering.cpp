@@ -155,12 +155,11 @@ public:
 			return false;
 		
 		// Load shaders
-		const char *attribs[] = {"a_position", "a_normal", "a_texcoord"};
-		if (!renderer_->AddShader(ground_shader_, "data/shaders/atmosphere/ground", attribs, _countof(attribs))) return false;
-		if (!renderer_->AddShader(clouds_shader_, "data/shaders/atmosphere/clouds", attribs, _countof(attribs))) return false;
-		if (!renderer_->AddShader(sky_shader_, "data/shaders/atmosphere/sky", attribs, _countof(attribs))) return false;
-		if (!renderer_->AddShader(text_shader_, "data/shaders/text", attribs, 1)) return false;
-		if (!renderer_->AddShader(gui_shader_, "data/shaders/gui_colored", attribs, 1)) return false;
+		if (!renderer_->AddShader(ground_shader_, "data/shaders/atmosphere/ground")) return false;
+		if (!renderer_->AddShader(clouds_shader_, "data/shaders/atmosphere/clouds")) return false;
+		if (!renderer_->AddShader(sky_shader_, "data/shaders/atmosphere/sky")) return false;
+		if (!renderer_->AddShader(text_shader_, "data/shaders/text")) return false;
+		if (!renderer_->AddShader(gui_shader_, "data/shaders/gui_colored")) return false;
 		
 		// Load textures
 		if (!renderer_->AddTexture(earth_texture_, "data/textures/earth.jpg",

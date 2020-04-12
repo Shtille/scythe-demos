@@ -161,10 +161,9 @@ public:
 		CreateTetrahedron(scythe::Vector3(1.5f, 4.0f, 0.5f), 1.0f, scythe::Vector3(0.2f, 0.0f, 1.0f), 0.2f);
 		
 		// Load shaders
-		const char *attribs[] = {"a_position"};
-		if (!renderer_->AddShader(object_shader_, "data/shaders/sandbox/object", attribs, _countof(attribs))) return false;
-		if (!renderer_->AddShader(text_shader_, "data/shaders/text", attribs, 1)) return false;
-		if (!renderer_->AddShader(gui_shader_, "data/shaders/gui_colored", attribs, 1)) return false;
+		if (!renderer_->AddShader(object_shader_, "data/shaders/sandbox/object")) return false;
+		if (!renderer_->AddShader(text_shader_, "data/shaders/text")) return false;
+		if (!renderer_->AddShader(gui_shader_, "data/shaders/gui_colored")) return false;
 
 		renderer_->AddFont(font_, "data/fonts/GoodDog.otf");
 		if (font_ == nullptr)
