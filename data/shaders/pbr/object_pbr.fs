@@ -5,9 +5,15 @@ layout(location = 0) out vec4 out_color;
 in DATA
 {
 	vec3 position;
+#ifdef USE_TANGENT
 	mat3 tbn;
+#else
+	vec3 normal;
+#endif
 	vec2 uv;
+#ifdef USE_SHADOW
 	vec4 shadow_coord;
+#endif
 } fs_in;
 
 struct Camera
@@ -23,7 +29,9 @@ struct Light
 
 uniform Camera u_camera;
 uniform Light u_light;
-uniform float u_shadow_scale; // determines how much shadow we want [0; 1]
+#ifdef USE_SHADOW
+ uniform float u_shadow_scale; // determines how much shadow we want [0; 1]
+#endif
 
 // PBR Inputs
 uniform samplerCube u_diffuse_env_sampler;
@@ -36,7 +44,9 @@ uniform sampler2D u_normal_sampler;
 uniform sampler2D u_roughness_sampler;
 uniform sampler2D u_metal_sampler;
 
-uniform sampler2D u_shadow_sampler;
+#ifdef USE_SHADOW
+ uniform sampler2D u_shadow_sampler;
+#endif
 
 // Encapsulate the various inputs used by the various functions in the shading equation
 // We store values in this struct to simplify the integration of alternative implementations
@@ -60,6 +70,7 @@ struct PBRInfo
 const float PI = 3.141592653589793;
 #define GAMMA 2.2
 
+#ifdef USE_SHADOW
 // Used for shadows
 vec2 poissonDisk[16] = vec2[](
 	vec2(-0.94201624, -0.39906216),
@@ -85,6 +96,7 @@ float random(vec3 seed, int i)
  float dot_product = dot(seed4, vec4(12.9898, 78.233, 45.164, 94.673));
  return fract(sin(dot_product) * 43758.5453);
 }
+#endif
 
 vec4 SrgbToLinear(vec4 srgb_in)
 {
@@ -97,7 +109,20 @@ vec4 SrgbToLinear(vec4 srgb_in)
 vec3 GetNormal()
 {
 	// Retrieve the tangent space matrix
+#ifdef USE_TANGENT
 	mat3 tbn = fs_in.tbn;
+#else
+	vec3 pos_dx = dFdx(fs_in.position);
+	vec3 pos_dy = dFdy(fs_in.position);
+	vec3 tex_dx = dFdx(vec3(fs_in.uv, 0.0));
+	vec3 tex_dy = dFdy(vec3(fs_in.uv, 0.0));
+	vec3 t = (tex_dy.t * pos_dx - tex_dx.t * pos_dy) / (tex_dx.s * tex_dy.t - tex_dy.s * tex_dx.t);
+	vec3 ng = normalize(fs_in.normal);
+
+	t = normalize(t - ng * dot(ng, t));
+	vec3 b = normalize(cross(ng, t));
+	mat3 tbn = mat3(t, b, ng);
+#endif
 	vec3 n = texture(u_normal_sampler, fs_in.uv).rgb;
 	n = normalize(tbn * (2.0 * n - 1.0));
 	return n;
@@ -162,6 +187,7 @@ float MicrofacetDistribution(PBRInfo pbr_inputs)
 	return roughnessSq / (PI * f * f);
 }
 
+#ifdef USE_SHADOW
 // Compute visibility for shadow factor using Chebyshev's equation
 float GetVisibility()
 {
@@ -188,6 +214,7 @@ float GetVisibility()
 
 	return p_max;
 }
+#endif
 
 void main()
 {
@@ -260,9 +287,11 @@ void main()
 	// Calculate lighting contribution from image based lighting source (IBL)
 	color += GetIBLContribution(pbr_inputs, n, reflection);
 
+#ifdef USE_SHADOW
 	// Calculate shadow factor
 	float visibility = 1.0 - u_shadow_scale * (1.0 - GetVisibility());
 	color *= visibility;
+#endif
 
 	out_color = vec4(pow(color, vec3(1.0/GAMMA)), base_color.a);
 }

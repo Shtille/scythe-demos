@@ -103,6 +103,19 @@ public:
 			return false;
 		
 		// Load shaders
+		const char* object_shader_defines[] = {
+			"USE_TANGENT",
+			"USE_SHADOW"
+		};
+		scythe::ShaderInfo object_shader_info(
+			"data/shaders/pbr/object_pbr", // base filename
+			nullptr, // no vertex filename
+			nullptr, // no fragment filename
+			nullptr, // array of attribs
+			0, // number of attribs
+			object_shader_defines, // array of defines
+			_countof(object_shader_defines) // number of defines
+			);
 		if (!renderer_->AddShader(text_shader_, "data/shaders/text")) return false;
 		if (!renderer_->AddShader(quad_shader_, "data/shaders/quad")) return false;
 		if (!renderer_->AddShader(gui_shader_, "data/shaders/gui_colored")) return false;
@@ -110,7 +123,7 @@ public:
 		if (!renderer_->AddShader(irradiance_shader_, "data/shaders/pbr/irradiance")) return false;
 		if (!renderer_->AddShader(prefilter_shader_, "data/shaders/pbr/prefilter")) return false;
 		if (!renderer_->AddShader(integrate_shader_, "data/shaders/pbr/integrate")) return false;
-		if (!renderer_->AddShader(object_shader_, "data/shaders/pbr/object_pbr")) return false;
+		if (!renderer_->AddShader(object_shader_, object_shader_info)) return false;
 		if (!renderer_->AddShader(object_shadow_shader_, "data/shaders/shadows/depth_vsm")) return false;
 		if (!renderer_->AddShader(blur_shader_, "data/shaders/blur")) return false;
 		
