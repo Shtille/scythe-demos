@@ -1,6 +1,7 @@
 #include "model/mesh.h"
 #include "graphics/text.h"
 #include "camera.h"
+#include "math/matrix3.h"
 
 #include "declare_main.h"
 
@@ -53,7 +54,7 @@ public:
 
 		object_shader_->Bind();
 		object_shader_->Uniform3f("u_light.color", 1.0f, 1.0f, 1.0f);
-		object_shader_->Uniform3f("u_light.direction", 1.0f, 1.0f, -1.0f);
+		//object_shader_->Uniform3f("u_light.direction", 1.0f, 1.0f, -1.0f);
 		object_shader_->Uniform1f("u_shadow_scale", 0.4f);
 		object_shader_->Uniform1i("u_diffuse_env_sampler", 0);
 		object_shader_->Uniform1i("u_specular_env_sampler", 1);
@@ -198,7 +199,13 @@ public:
 		camera_manager_->Update(kFrameTime);
 
 		light_angle_ += 0.1f * kFrameTime;
-		light_position_.Set(light_distance_ * cosf(light_angle_), 1.0f, light_distance_ * sinf(light_angle_));
+		scythe::Matrix3 light_rotation;
+		scythe::Matrix3::CreateRotationY(light_angle_, &light_rotation);
+		light_rotation.GetBackVector(&light_direction_);
+
+		// Light direction = direction to light!
+		light_position_.Set(scythe::Vector3(0.0f, 1.0f, 0.0f) + light_distance_ * light_direction_);
+		scythe::Matrix4::CreateView(light_rotation, light_position_, &light_view_matrix_);
 
 		// Update matrices
 		renderer_->SetViewMatrix(camera_manager_->view_matrix());
@@ -331,9 +338,7 @@ public:
 		// Ortho matrix is used for directional light sources and perspective for spot ones.
 		scythe::Matrix4 depth_projection;
 		scythe::Matrix4::CreateOrthographic(10.0f, 10.0f, 0.0f, 20.0f, &depth_projection);
-		scythe::Matrix4 depth_view;
-		scythe::Matrix4::CreateLookAt(light_position_, scythe::Vector3(0.0f), scythe::Vector3::UnitY(), &depth_view);
-		scythe::Matrix4 depth_projection_view = depth_projection * depth_view;
+		scythe::Matrix4 depth_projection_view = depth_projection * light_view_matrix_;
 		/*
 			Native view of bias matrix is:
 			    | 0.5 0.0 0.0 0.5 |
@@ -409,6 +414,7 @@ public:
 			object_shader_->UniformMatrix4fv("u_projection_view", projection_view_matrix_);
 			object_shader_->UniformMatrix4fv("u_depth_bias_projection_view", depth_bias_projection_view_matrix_);
 			object_shader_->Uniform3fv("u_camera.position", *camera_manager_->position());
+			object_shader_->Uniform3fv("u_light.direction", light_direction_);
 
 			RenderObjects(object_shader_, true);
 
@@ -544,8 +550,10 @@ private:
 	
 	scythe::Matrix4 projection_view_matrix_;
 	scythe::Matrix4 depth_bias_projection_view_matrix_;
+	scythe::Matrix4 light_view_matrix_;
 
 	scythe::Vector3 light_position_;
+	scythe::Vector3 light_direction_;
 	float light_angle_;
 	const float light_distance_;
 	
