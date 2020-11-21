@@ -18,6 +18,10 @@
 
 #include <cmath>
 
+namespace {
+	const int kShadowMapSize = 1024;
+}
+
 /**
  * Defines main application class
  */
@@ -43,9 +47,12 @@ public:
 	, camera_theta_(0.5f)
 	, cos_camera_alpha_(1.0f)
 	, sin_camera_alpha_(0.0f)
+	, light_direction_(0.825f, 0.564f, 0.0f)
+	, light_distance_(10.0f)
 	, need_update_projection_matrix_(true)
 	, need_update_view_matrix_(true)
 	, victory_(false)
+	, show_shadow_texture_(false)
 	{
 		SetInputListener(this);
 	}
@@ -62,10 +69,16 @@ public:
 		env_shader_->Bind();
 		env_shader_->Uniform1i("u_texture", 0);
 
+		quad_shader_->Bind();
+		quad_shader_->Uniform1i("u_texture", 0);
+
+		blur_shader_->Bind();
+		blur_shader_->Uniform1i("u_texture", 0);
+
 		object_shader_->Bind();
 		object_shader_->Uniform3f("u_light.color", 1.0f, 1.0f, 1.0f);
-		object_shader_->Uniform3f("u_light.direction", 0.825f, 0.564f, 0.0f);
-
+		object_shader_->Uniform3fv("u_light.direction", light_direction_);
+		object_shader_->Uniform1f("u_shadow_scale", 0.4f);
 		object_shader_->Uniform1i("u_diffuse_env_sampler", 0);
 		object_shader_->Uniform1i("u_specular_env_sampler", 1);
 		object_shader_->Uniform1i("u_preintegrated_fg_sampler", 2);
@@ -73,14 +86,11 @@ public:
 		object_shader_->Uniform1i("u_normal_sampler", 4);
 		object_shader_->Uniform1i("u_roughness_sampler", 5);
 		object_shader_->Uniform1i("u_metal_sampler", 6);
+		object_shader_->Uniform1i("u_shadow_sampler", 7);
 		object_shader_->Unbind();
 	}
 	void BindShaderVariables()
 	{
-		object_shader_->Bind();
-		object_shader_->UniformMatrix4fv("u_projection_view", projection_view_matrix_);
-		object_shader_->Uniform3fv("u_camera.position", camera_position_);
-		object_shader_->Unbind();
 	}
 	bool Load() final
 	{
@@ -218,13 +228,29 @@ public:
 		}
 		
 		// Load shaders
+		const char* object_shader_defines[] = {
+			"USE_SHADOW"
+		};
+		scythe::ShaderInfo object_shader_info(
+			"data/shaders/pbr/object_pbr", // base filename
+			nullptr, // no vertex filename
+			nullptr, // no fragment filename
+			nullptr, // array of attribs
+			0, // number of attribs
+			object_shader_defines, // array of defines
+			_countof(object_shader_defines) // number of defines
+			);
+
 		if (!renderer_->AddShader(text_shader_, "data/shaders/text")) return false;
+		if (!renderer_->AddShader(quad_shader_, "data/shaders/quad")) return false;
 		if (!renderer_->AddShader(gui_shader_, "data/shaders/gui_colored")) return false;
 		if (!renderer_->AddShader(env_shader_, "data/shaders/skybox")) return false;
 		if (!renderer_->AddShader(irradiance_shader_, "data/shaders/pbr/irradiance")) return false;
 		if (!renderer_->AddShader(prefilter_shader_, "data/shaders/pbr/prefilter")) return false;
 		if (!renderer_->AddShader(integrate_shader_, "data/shaders/pbr/integrate")) return false; // dont use
-		if (!renderer_->AddShader(object_shader_, "data/shaders/pbr/object_pbr_no_tb")) return false;
+		if (!renderer_->AddShader(object_shader_, object_shader_info)) return false;
+		if (!renderer_->AddShader(object_shadow_shader_, "data/shaders/shadows/depth_vsm")) return false;
+		if (!renderer_->AddShader(blur_shader_, "data/shaders/blur")) return false;
 		
 		// Load textures
 		const char * cubemap_filenames[6] = {
@@ -271,6 +297,9 @@ public:
 		renderer_->CreateTextureCubemap(irradiance_rt_, 32, 32, scythe::Image::Format::kRGB8, scythe::Texture::Filter::kLinear);
 		renderer_->CreateTextureCubemap(prefilter_rt_, 512, 512, scythe::Image::Format::kRGB8, scythe::Texture::Filter::kTrilinear);
 		renderer_->GenerateMipmap(prefilter_rt_);
+		renderer_->AddRenderTarget(shadow_color_rt_, kShadowMapSize, kShadowMapSize, scythe::Image::Format::kRG32);
+		renderer_->AddRenderDepthStencil(shadow_depth_rt_, kShadowMapSize, kShadowMapSize, 32, 0);
+		renderer_->AddRenderTarget(blur_color_rt_, kShadowMapSize, kShadowMapSize, scythe::Image::Format::kRG32);
 
 		renderer_->AddFont(font_, "data/fonts/GoodDog.otf");
 		if (font_ == nullptr)
@@ -284,6 +313,10 @@ public:
 		UpdateCameraPosition();
 
 		CreateUI();
+
+		// Generate matrix for shadows
+		// Ortho matrix is used for directional light sources and perspective for spot ones.
+		scythe::Matrix4::CreateOrthographic(10.0f, 10.0f, 0.0f, 20.0f, &light_projection_matrix_);
 
 		// Finally bind constants
 		BindShaderConstants();
@@ -332,6 +365,7 @@ public:
 		WinConditionCheck();
 
 		UpdateCamera();
+		UpdateLightPosition();
 
 		// Update matrices
 		UpdateProjectionMatrix();
@@ -455,6 +489,7 @@ public:
 		renderer_->ChangeTexture(maze_normal_texture_, 4);
 		renderer_->ChangeTexture(maze_roughness_texture_, 5);
 		renderer_->ChangeTexture(maze_metal_texture_, 6);
+		renderer_->ChangeTexture(shadow_color_rt_, 7);
 	}
 	void BallTextureBinding()
 	{
@@ -465,9 +500,11 @@ public:
 		renderer_->ChangeTexture(ball_normal_texture_, 4);
 		renderer_->ChangeTexture(ball_roughness_texture_, 5);
 		renderer_->ChangeTexture(ball_metal_texture_, 6);
+		renderer_->ChangeTexture(shadow_color_rt_, 7);
 	}
 	void EmptyTextureBinding()
 	{
+		renderer_->ChangeTexture(nullptr, 7);
 		renderer_->ChangeTexture(nullptr, 6);
 		renderer_->ChangeTexture(nullptr, 5);
 		renderer_->ChangeTexture(nullptr, 4);
@@ -476,36 +513,121 @@ public:
 		renderer_->ChangeTexture(nullptr, 1);
 		renderer_->ChangeTexture(nullptr, 0);
 	}
-	void RenderObjects()
+	void RenderObjects(scythe::Shader * shader, bool normal_mode)
 	{
-		object_shader_->Bind();
-
-		MazeTextureBinding();
+		if (normal_mode)
+			MazeTextureBinding();
 
 		// Floor
 		renderer_->PushMatrix();
 		renderer_->LoadMatrix(floor_node_->GetWorldMatrix());
-		object_shader_->UniformMatrix4fv("u_model", renderer_->model_matrix());
+		shader->UniformMatrix4fv("u_model", renderer_->model_matrix());
 		floor_node_->GetDrawable()->Draw();
 		renderer_->PopMatrix();
 
 		// Walls
 		renderer_->PushMatrix();
 		renderer_->LoadMatrix(wall_node_->GetWorldMatrix());
-		object_shader_->UniformMatrix4fv("u_model", renderer_->model_matrix());
+		shader->UniformMatrix4fv("u_model", renderer_->model_matrix());
 		wall_node_->GetDrawable()->Draw();
 		renderer_->PopMatrix();
 
-		BallTextureBinding();
+		if (normal_mode)
+			BallTextureBinding();
 
 		// Ball
 		renderer_->PushMatrix();
 		renderer_->LoadMatrix(ball_node_->GetWorldMatrix());
-		object_shader_->UniformMatrix4fv("u_model", renderer_->model_matrix());
+		shader->UniformMatrix4fv("u_model", renderer_->model_matrix());
 		ball_node_->GetDrawable()->Draw();
 		renderer_->PopMatrix();
 
-		EmptyTextureBinding();
+		if (normal_mode)
+			EmptyTextureBinding();
+	}
+	void ShadowPass()
+	{
+		scythe::Matrix4 depth_projection_view = light_projection_matrix_ * light_view_matrix_;
+		/*
+			Native view of bias matrix is:
+			    | 0.5 0.0 0.0 0.5 |
+			M = | 0.0 0.5 0.0 0.5 |
+			    | 0.0 0.0 0.5 0.5 |
+			    | 0.0 0.0 0.0 1.0 |
+		*/
+		scythe::Matrix4 bias_matrix(
+			0.5f, 0.0f, 0.0f, 0.5f,
+			0.0f, 0.5f, 0.0f, 0.5f,
+			0.0f, 0.0f, 0.5f, 0.5f,
+			0.0f, 0.0f, 0.0f, 1.0f
+		);
+		depth_bias_projection_view_matrix_ = bias_matrix * depth_projection_view;
+
+		renderer_->ChangeRenderTarget(shadow_color_rt_, shadow_depth_rt_);
+		renderer_->ClearColorAndDepthBuffers();
+
+		object_shadow_shader_->Bind();
+		object_shadow_shader_->UniformMatrix4fv("u_projection_view", depth_projection_view);
+
+		RenderObjects(object_shadow_shader_, false);
+
+		object_shadow_shader_->Unbind();
+
+		renderer_->ChangeRenderTarget(nullptr, nullptr);
+
+		const float kBlurScale = 1.0f;
+		const float kBlurSize = kBlurScale / static_cast<float>(kShadowMapSize);
+
+		renderer_->DisableDepthTest();
+		blur_shader_->Bind();
+
+		// Blur horizontally
+		renderer_->ChangeRenderTarget(blur_color_rt_, nullptr);
+		renderer_->ChangeTexture(shadow_color_rt_, 0);
+		renderer_->ClearColorBuffer();
+		blur_shader_->Uniform2f("u_scale", kBlurSize, 0.0f);
+		quad_mesh_->Render();
+
+		// Blur vertically
+		renderer_->ChangeRenderTarget(shadow_color_rt_, nullptr);
+		renderer_->ChangeTexture(blur_color_rt_, 0);
+		renderer_->ClearColorBuffer();
+		blur_shader_->Uniform2f("u_scale", 0.0f, kBlurSize);
+		quad_mesh_->Render();
+
+		// Back to main framebuffer
+		renderer_->ChangeRenderTarget(nullptr, nullptr);
+
+		blur_shader_->Unbind();
+		renderer_->EnableDepthTest();
+	}
+	void NormalPass()
+	{
+		if (show_shadow_texture_)
+		{
+			quad_shader_->Bind();
+
+			renderer_->ChangeTexture(shadow_color_rt_, 0);
+			quad_mesh_->Render();
+			renderer_->ChangeTexture(nullptr, 0);
+
+			quad_shader_->Unbind();
+			return;
+		}
+		object_shader_->Bind();
+		object_shader_->UniformMatrix4fv("u_projection_view", projection_view_matrix_);
+		object_shader_->UniformMatrix4fv("u_depth_bias_projection_view", depth_bias_projection_view_matrix_);
+		object_shader_->Uniform3fv("u_camera.position", camera_position_);
+
+		RenderObjects(object_shader_, true);
+	}
+	void RenderScene()
+	{
+		// First render shadows
+		ShadowPass();
+
+		// Then render objects
+		NormalPass();
 	}
 	void RenderInterface()
 	{
@@ -545,7 +667,7 @@ public:
 		renderer_->ClearColorAndDepthBuffers();
 		
 		RenderEnvironment();
-		RenderObjects();
+		RenderScene();
 		RenderInterface();
 	}
 	void OnChar(unsigned short code) final
@@ -564,6 +686,10 @@ public:
 		else if (key == scythe::PublicKey::kF5)
 		{
 			renderer_->TakeScreenshot("screenshots");
+		}
+		else if (key == scythe::PublicKey::kSpace)
+		{
+			show_shadow_texture_ = !show_shadow_texture_;
 		}
 	}
 	void OnKeyUp(scythe::PublicKey key, int modifiers) final
@@ -811,6 +937,13 @@ public:
 		UpdateCameraPosition();
 		need_update_view_matrix_ = true;
 	}
+	void UpdateLightPosition()
+	{
+		const scythe::Vector3& target_position = ball_node_->GetTranslation();
+		light_position_ = target_position + light_direction_ * light_distance_;
+		scythe::Matrix4::CreateLookAt(light_position_, target_position,
+			scythe::Vector3::UnitY(), &light_view_matrix_);
+	}
 	void UpdateProjectionMatrix()
 	{
 		if (need_update_projection_matrix_)
@@ -848,12 +981,15 @@ private:
 	std::vector<scythe::Node *> nodes_;
 
 	scythe::Shader * text_shader_;
+	scythe::Shader * quad_shader_; // needed only to show shadow texture, should be removed
 	scythe::Shader * gui_shader_;
 	scythe::Shader * env_shader_;
 	scythe::Shader * object_shader_;
+	scythe::Shader * object_shadow_shader_;
 	scythe::Shader * irradiance_shader_;
 	scythe::Shader * prefilter_shader_;
 	scythe::Shader * integrate_shader_;
+	scythe::Shader * blur_shader_;
 
 	scythe::Texture * env_texture_;
 	scythe::Texture * ball_albedo_texture_;
@@ -867,6 +1003,9 @@ private:
 	scythe::Texture * fg_texture_;
 	scythe::Texture * irradiance_rt_;
 	scythe::Texture * prefilter_rt_;
+	scythe::Texture * shadow_color_rt_;
+	scythe::Texture * shadow_depth_rt_;
+	scythe::Texture * blur_color_rt_;
 
 	scythe::Font * font_;
 	scythe::DynamicText * fps_text_;
@@ -878,6 +1017,9 @@ private:
 	scythe::Rect * victory_exit_rect_;
 	
 	scythe::Matrix4 projection_view_matrix_;
+	scythe::Matrix4 depth_bias_projection_view_matrix_;
+	scythe::Matrix4 light_projection_matrix_;
+	scythe::Matrix4 light_view_matrix_;
 
 	scythe::Quaternion camera_orientation_;
 	scythe::Vector3 camera_position_;
@@ -887,9 +1029,14 @@ private:
 	float cos_camera_alpha_;
 	float sin_camera_alpha_;
 
+	scythe::Vector3 light_position_;
+	const scythe::Vector3 light_direction_;
+	const float light_distance_;
+
 	bool need_update_projection_matrix_;
 	bool need_update_view_matrix_;
 	bool victory_;
+	bool show_shadow_texture_; // for DEBUG
 };
 
 DECLARE_MAIN(MarbleMazeApp);
