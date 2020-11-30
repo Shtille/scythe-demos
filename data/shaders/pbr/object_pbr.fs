@@ -12,7 +12,12 @@ in DATA
 #endif
 	vec2 uv;
 #ifdef USE_SHADOW
+ #ifdef USE_CSM
+ 	vec4 shadow_coords[NUM_SPLITS];
+ 	float clip_space_z;
+ #else
 	vec4 shadow_coord;
+ #endif
 #endif
 } fs_in;
 
@@ -31,6 +36,9 @@ uniform Camera u_camera;
 uniform Light u_light;
 #ifdef USE_SHADOW
  uniform float u_shadow_scale; // determines how much shadow we want [0; 1]
+ #ifdef USE_CSM
+  uniform float u_clip_space_split_distances[NUM_SPLITS];
+ #endif
 #endif
 
 // PBR Inputs
@@ -45,7 +53,11 @@ uniform sampler2D u_roughness_sampler;
 uniform sampler2D u_metal_sampler;
 
 #ifdef USE_SHADOW
- uniform sampler2D u_shadow_sampler;
+ #ifdef USE_CSM
+  uniform sampler2D u_shadow_samplers[NUM_SPLITS];
+ #else
+  uniform sampler2D u_shadow_sampler;
+ #endif
 #endif
 
 // Encapsulate the various inputs used by the various functions in the shading equation
@@ -188,9 +200,33 @@ float MicrofacetDistribution(PBRInfo pbr_inputs)
 }
 
 #ifdef USE_SHADOW
+#ifdef USE_CSM
+int GetCascadeIndex()
+{
+	for (int i = 0; i < NUM_SPLITS; i++)
+	{
+		if (fs_in.clip_space_z <= u_clip_space_split_distances[i])
+			return i;
+	}
+	// This shouldn't happen
+	return 0;
+}
+#endif
 // Compute visibility for shadow factor using Chebyshev's equation
 float GetVisibility()
 {
+#ifdef USE_CSM
+	int index = GetCascadeIndex();
+	vec4 shadow_coord = fs_in.shadow_coords[index];
+	vec4 shadow_coord_post_w = shadow_coord / shadow_coord.w;
+	// Check if we outside the shadow map
+	if (shadow_coord.w <= 0.0 ||
+		(shadow_coord_post_w.x <  0.0 || shadow_coord_post_w.y <  0.0) ||
+		(shadow_coord_post_w.x >= 1.0 || shadow_coord_post_w.y >= 1.0))
+		return 1.0;
+	// We retrive the two moments previously stored (depth and depth*depth)
+	vec2 moments = texture(u_shadow_samplers[index], shadow_coord_post_w.xy).rg;
+#else
 	vec4 shadow_coord_post_w = fs_in.shadow_coord / fs_in.shadow_coord.w;
 	// Check if we outside the shadow map
 	if (fs_in.shadow_coord.w <= 0.0 ||
@@ -199,6 +235,7 @@ float GetVisibility()
 		return 1.0;
 	// We retrive the two moments previously stored (depth and depth*depth)
 	vec2 moments = texture(u_shadow_sampler, shadow_coord_post_w.xy).rg;
+#endif
 	
 	// Surface is fully lit. as the current fragment is before the light occluder
 	if (shadow_coord_post_w.z <= moments.x)

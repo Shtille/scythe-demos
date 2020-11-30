@@ -1,7 +1,10 @@
 #include "wall_data.h"
 
+#include "math/frustum.h"
+#include "math/matrix3.h"
 #include "model/mesh.h"
 #include "graphics/text.h"
+#include "common/string_format.h"
 
 #include "ui/slider.h"
 #include "ui/board.h"
@@ -18,8 +21,15 @@
 
 #include <cmath>
 
+#define USE_CSM
+
 namespace {
 	const int kShadowMapSize = 1024;
+#ifdef USE_CSM
+	const U32 kMaxCSMSplits = 4;
+	const U32 kNumSplits = 3;
+	const float kSplitLambda = 0.5f;
+#endif
 }
 
 /**
@@ -48,11 +58,15 @@ public:
 	, cos_camera_alpha_(1.0f)
 	, sin_camera_alpha_(0.0f)
 	, light_direction_(0.825f, 0.564f, 0.0f)
-	, light_distance_(10.0f)
+	, fov_degrees_(45.0f)
+	, z_near_(0.1f)
+	, z_far_(100.0f)
 	, need_update_projection_matrix_(true)
 	, need_update_view_matrix_(true)
+	, need_update_frustum_(true)
 	, victory_(false)
 	, show_shadow_texture_(false)
+	, shadow_texture_index_(0)
 	{
 		SetInputListener(this);
 	}
@@ -86,7 +100,13 @@ public:
 		object_shader_->Uniform1i("u_normal_sampler", 4);
 		object_shader_->Uniform1i("u_roughness_sampler", 5);
 		object_shader_->Uniform1i("u_metal_sampler", 6);
+#ifdef USE_CSM
+		const int array_units[] = {7, 8, 9, 10};
+		static_assert(_countof(array_units) == kMaxCSMSplits, "Array units count mismatch");
+		object_shader_->Uniform1iv("u_shadow_samplers", array_units, kNumSplits);
+#else
 		object_shader_->Uniform1i("u_shadow_sampler", 7);
+#endif
 		object_shader_->Unbind();
 	}
 	void BindShaderVariables()
@@ -228,8 +248,13 @@ public:
 		}
 		
 		// Load shaders
+		std::string num_splits_string = scythe::string_format("#define NUM_SPLITS %u", kNumSplits);
 		const char* object_shader_defines[] = {
-			"USE_SHADOW"
+			"USE_SHADOW",
+#ifdef USE_CSM
+			"USE_CSM",
+			num_splits_string.c_str(),
+#endif
 		};
 		scythe::ShaderInfo object_shader_info(
 			"data/shaders/pbr/object_pbr", // base filename
@@ -297,7 +322,12 @@ public:
 		renderer_->CreateTextureCubemap(irradiance_rt_, 32, 32, scythe::Image::Format::kRGB8, scythe::Texture::Filter::kLinear);
 		renderer_->CreateTextureCubemap(prefilter_rt_, 512, 512, scythe::Image::Format::kRGB8, scythe::Texture::Filter::kTrilinear);
 		renderer_->GenerateMipmap(prefilter_rt_);
+#ifdef USE_CSM
+		for (U32 i = 0 ; i < kNumSplits; ++i)
+			renderer_->AddRenderTarget(shadow_color_rts_[i], kShadowMapSize, kShadowMapSize, scythe::Image::Format::kRG32);
+#else
 		renderer_->AddRenderTarget(shadow_color_rt_, kShadowMapSize, kShadowMapSize, scythe::Image::Format::kRG32);
+#endif
 		renderer_->AddRenderDepthStencil(shadow_depth_rt_, kShadowMapSize, kShadowMapSize, 32, 0);
 		renderer_->AddRenderTarget(blur_color_rt_, kShadowMapSize, kShadowMapSize, scythe::Image::Format::kRG32);
 
@@ -314,9 +344,16 @@ public:
 
 		CreateUI();
 
+#ifdef USE_CSM
+		// Since we use light basis also for view matrix we should use inverse direction vector
+		scythe::Matrix3::CreateBasis(-light_direction_, scythe::Vector3::UnitY(), &light_basis_);
+		light_basis_.Invert(&light_basis_inverse_);
+		CalculateSplitDistances();
+#else
 		// Generate matrix for shadows
 		// Ortho matrix is used for directional light sources and perspective for spot ones.
 		scythe::Matrix4::CreateOrthographic(10.0f, 10.0f, 0.0f, 20.0f, &light_projection_matrix_);
+#endif
 
 		// Finally bind constants
 		BindShaderConstants();
@@ -365,12 +402,14 @@ public:
 		WinConditionCheck();
 
 		UpdateCamera();
-		UpdateLightPosition();
 
 		// Update matrices
 		UpdateProjectionMatrix();
 		UpdateViewMatrix();
 		projection_view_matrix_ = renderer_->projection_matrix() * renderer_->view_matrix();
+		UpdateFrustum();
+
+		UpdateLightMatrices();
 
 		BindShaderVariables();
 	}
@@ -489,7 +528,12 @@ public:
 		renderer_->ChangeTexture(maze_normal_texture_, 4);
 		renderer_->ChangeTexture(maze_roughness_texture_, 5);
 		renderer_->ChangeTexture(maze_metal_texture_, 6);
+#ifdef USE_CSM
+		for (U32 i = 0 ; i < kNumSplits; ++i)
+			renderer_->ChangeTexture(shadow_color_rts_[i], 7 + i);
+#else
 		renderer_->ChangeTexture(shadow_color_rt_, 7);
+#endif
 	}
 	void BallTextureBinding()
 	{
@@ -500,11 +544,21 @@ public:
 		renderer_->ChangeTexture(ball_normal_texture_, 4);
 		renderer_->ChangeTexture(ball_roughness_texture_, 5);
 		renderer_->ChangeTexture(ball_metal_texture_, 6);
+#ifdef USE_CSM
+		for (U32 i = 0 ; i < kNumSplits; ++i)
+			renderer_->ChangeTexture(shadow_color_rts_[i], 7 + i);
+#else
 		renderer_->ChangeTexture(shadow_color_rt_, 7);
+#endif
 	}
 	void EmptyTextureBinding()
 	{
+#ifdef USE_CSM
+		for (U32 i = 0 ; i < kNumSplits; ++i)
+			renderer_->ChangeTexture(nullptr, 7 + i);
+#else
 		renderer_->ChangeTexture(nullptr, 7);
+#endif
 		renderer_->ChangeTexture(nullptr, 6);
 		renderer_->ChangeTexture(nullptr, 5);
 		renderer_->ChangeTexture(nullptr, 4);
@@ -545,6 +599,68 @@ public:
 		if (normal_mode)
 			EmptyTextureBinding();
 	}
+#ifdef USE_CSM
+	void ShadowPassCSM()
+	{
+		/*
+			Native view of bias matrix is:
+			    | 0.5 0.0 0.0 0.5 |
+			M = | 0.0 0.5 0.0 0.5 |
+			    | 0.0 0.0 0.5 0.5 |
+			    | 0.0 0.0 0.0 1.0 |
+		*/
+		scythe::Matrix4 bias_matrix(
+			0.5f, 0.0f, 0.0f, 0.5f,
+			0.0f, 0.5f, 0.0f, 0.5f,
+			0.0f, 0.0f, 0.5f, 0.5f,
+			0.0f, 0.0f, 0.0f, 1.0f
+		);
+		const float kBlurScale = 1.0f;
+		const float kBlurSize = kBlurScale / static_cast<float>(kShadowMapSize);
+
+		for (U32 i = 0; i < kNumSplits; ++i)
+		{
+			scythe::Matrix4 depth_projection_view = light_projection_matrices_[i] * light_view_matrices_[i];
+			depth_bias_projection_view_matrices_[i] = bias_matrix * depth_projection_view;
+
+			// Render shadows
+			renderer_->ChangeRenderTarget(shadow_color_rts_[i], shadow_depth_rt_);
+			renderer_->ClearColorAndDepthBuffers();
+
+			object_shadow_shader_->Bind();
+			object_shadow_shader_->UniformMatrix4fv("u_projection_view", depth_projection_view);
+
+			RenderObjects(object_shadow_shader_, false);
+
+			object_shadow_shader_->Unbind();
+
+			renderer_->ChangeRenderTarget(nullptr, nullptr);
+
+			renderer_->DisableDepthTest();
+			blur_shader_->Bind();
+
+			// Blur horizontally
+			renderer_->ChangeRenderTarget(blur_color_rt_, nullptr);
+			renderer_->ChangeTexture(shadow_color_rts_[i], 0);
+			renderer_->ClearColorBuffer();
+			blur_shader_->Uniform2f("u_scale", kBlurSize, 0.0f);
+			quad_mesh_->Render();
+
+			// Blur vertically
+			renderer_->ChangeRenderTarget(shadow_color_rts_[i], nullptr);
+			renderer_->ChangeTexture(blur_color_rt_, 0);
+			renderer_->ClearColorBuffer();
+			blur_shader_->Uniform2f("u_scale", 0.0f, kBlurSize);
+			quad_mesh_->Render();
+
+			// Back to main framebuffer
+			renderer_->ChangeRenderTarget(nullptr, nullptr);
+
+			blur_shader_->Unbind();
+			renderer_->EnableDepthTest();
+		}
+	}
+#else
 	void ShadowPass()
 	{
 		scythe::Matrix4 depth_projection_view = light_projection_matrix_ * light_view_matrix_;
@@ -601,13 +717,18 @@ public:
 		blur_shader_->Unbind();
 		renderer_->EnableDepthTest();
 	}
+#endif
 	void NormalPass()
 	{
 		if (show_shadow_texture_)
 		{
 			quad_shader_->Bind();
 
+#ifdef USE_CSM
+			renderer_->ChangeTexture(shadow_color_rts_[shadow_texture_index_], 0);
+#else
 			renderer_->ChangeTexture(shadow_color_rt_, 0);
+#endif
 			quad_mesh_->Render();
 			renderer_->ChangeTexture(nullptr, 0);
 
@@ -616,7 +737,15 @@ public:
 		}
 		object_shader_->Bind();
 		object_shader_->UniformMatrix4fv("u_projection_view", projection_view_matrix_);
+#ifdef USE_CSM
+		object_shader_->UniformMatrix4fv("u_depth_bias_projection_view", 
+			depth_bias_projection_view_matrices_[0], false, kNumSplits);
+		// First split distance stores near value
+		object_shader_->Uniform1fv("u_clip_space_split_distances", 
+			clip_space_split_distances_, kNumSplits);
+#else
 		object_shader_->UniformMatrix4fv("u_depth_bias_projection_view", depth_bias_projection_view_matrix_);
+#endif
 		object_shader_->Uniform3fv("u_camera.position", camera_position_);
 
 		RenderObjects(object_shader_, true);
@@ -624,7 +753,11 @@ public:
 	void RenderScene()
 	{
 		// First render shadows
+#ifdef USE_CSM
+		ShadowPassCSM();
+#else
 		ShadowPass();
+#endif
 
 		// Then render objects
 		NormalPass();
@@ -690,6 +823,10 @@ public:
 		else if (key == scythe::PublicKey::kSpace)
 		{
 			show_shadow_texture_ = !show_shadow_texture_;
+		}
+		else if (key == scythe::PublicKey::kI)
+		{
+			shadow_texture_index_ = (shadow_texture_index_ + 1) % kNumSplits;
 		}
 	}
 	void OnKeyUp(scythe::PublicKey key, int modifiers) final
@@ -937,21 +1074,19 @@ public:
 		UpdateCameraPosition();
 		need_update_view_matrix_ = true;
 	}
-	void UpdateLightPosition()
-	{
-		const scythe::Vector3& target_position = ball_node_->GetTranslation();
-		light_position_ = target_position + light_direction_ * light_distance_;
-		scythe::Matrix4::CreateLookAt(light_position_, target_position,
-			scythe::Vector3::UnitY(), &light_view_matrix_);
-	}
 	void UpdateProjectionMatrix()
 	{
 		if (need_update_projection_matrix_)
 		{
 			need_update_projection_matrix_ = false;
+			need_update_frustum_ = true;
 			scythe::Matrix4 projection_matrix;
-			scythe::Matrix4::CreatePerspective(45.0f, aspect_ratio_, 0.1f, 100.0f, &projection_matrix);
+			scythe::Matrix4::CreatePerspective(fov_degrees_, aspect_ratio_, 
+				z_near_, z_far_, &projection_matrix);
 			renderer_->SetProjectionMatrix(projection_matrix);
+#ifdef USE_CSM
+			UpdateClipSpaceSplitDistances(projection_matrix);
+#endif
 		}
 	}
 	void UpdateViewMatrix()
@@ -959,13 +1094,135 @@ public:
 		if (need_update_view_matrix_)
 		{
 			need_update_view_matrix_ = false;
+			need_update_frustum_ = true;
 			scythe::Matrix4 view_matrix;
 			scythe::Matrix4::CreateView(camera_orientation_, camera_position_, &view_matrix);
 			renderer_->SetViewMatrix(view_matrix);
 		}
 	}
+	void UpdateFrustum()
+	{
+		if (need_update_frustum_)
+		{
+			need_update_frustum_ = false;
+			frustum_.Set(projection_view_matrix_);
+		}
+	}
+#ifdef USE_CSM
+	/**
+	 * Calculates split distances in world space.
+	 * Depends on z near and z far.
+	 */
+	void CalculateSplitDistances()
+	{
+		for (U32 i = 0; i < kNumSplits + 1; ++i)
+		{
+			float fraction = (float)i / (float)kNumSplits;
+			float exponential = z_near_ * pow(z_far_ / z_near_, fraction);
+			float linear = z_near_ + (z_far_ - z_near_) * fraction;
+			split_distances_[i] = exponential * kSplitLambda + linear * (1.0f - kSplitLambda);
+		}
+		split_distances_[0] = z_near_;
+		split_distances_[kNumSplits] = z_far_;
+	}
+	/**
+	 * Calculates split distances in clip space.
+	 * Depends on projection matrix.
+	 */
+	void UpdateClipSpaceSplitDistances(const scythe::Matrix4& projection_matrix)
+	{
+		for (U32 i = 0; i < kNumSplits; ++i)
+		{
+			// The default view coordinate system has its Z axis "on us".
+			// To make point in view direction, just use -Z.
+			scythe::Vector3 point(0.0f, 0.0f, -split_distances_[i + 1]);
+			projection_matrix.TransformPoint(&point);
+			clip_space_split_distances_[i] = point.z;
+		}
+	}
+	void CalculateSplitMatrices()
+	{
+		// Get frustum corners
+		scythe::Vector3 frustum_corners[8];
+		frustum_.GetCorners(frustum_corners);
+		// Then we can obtain splitted frustums from those corners
+		for (U32 i = 0; i < kNumSplits; ++i)
+		{
+			// Get near and far planes for split
+			float near_distance = split_distances_[i];
+			float far_distance = split_distances_[i+1];
+			// Get near and far fractions
+			float near_fraction = (near_distance - z_near_) / (z_far_ - z_near_);
+			float far_fraction = (far_distance - z_near_) / (z_far_ - z_near_);
+			// Get corner points for split via four lines
+			scythe::Vector3 corners[8];
+			scythe::Vector3 line;
+			int near_index, far_index;
+			// Left top
+			near_index = 0;
+			far_index = 7;
+			line = frustum_corners[far_index] - frustum_corners[near_index];
+			corners[near_index] = frustum_corners[near_index] + line * near_fraction;
+			corners[far_index] = frustum_corners[near_index] + line * far_fraction;
+			// Left bottom
+			near_index = 1;
+			far_index = 6;
+			line = frustum_corners[far_index] - frustum_corners[near_index];
+			corners[near_index] = frustum_corners[near_index] + line * near_fraction;
+			corners[far_index] = frustum_corners[near_index] + line * far_fraction;
+			// Right bottom
+			near_index = 2;
+			far_index = 5;
+			line = frustum_corners[far_index] - frustum_corners[near_index];
+			corners[near_index] = frustum_corners[near_index] + line * near_fraction;
+			corners[far_index] = frustum_corners[near_index] + line * far_fraction;
+			// Right top
+			near_index = 3;
+			far_index = 4;
+			line = frustum_corners[far_index] - frustum_corners[near_index];
+			corners[near_index] = frustum_corners[near_index] + line * near_fraction;
+			corners[far_index] = frustum_corners[near_index] + line * far_fraction;
+			// Then transform corners to light space (light basis) and calc bounding box
+			scythe::Vector3 light_corners[8];
+			scythe::BoundingBox bounding_box;
+			bounding_box.Prepare();
+			for (U32 j = 0; j < 8; ++j)
+			{
+				light_corners[j] = light_basis_inverse_ * corners[j];
+				bounding_box.AddPoint(light_corners[j]);
+			}
+			// Assuming forward direction is +X
+			float ortho_width = bounding_box.max.z - bounding_box.min.z;
+			float ortho_height = bounding_box.max.y - bounding_box.min.y;
+			float ortho_near = 0.0f;
+			float ortho_far = bounding_box.max.x - bounding_box.min.x;
+			scythe::Matrix4::CreateOrthographic(ortho_width, ortho_height, 
+				ortho_near, ortho_far, &light_projection_matrices_[i]);
+			// Transform center back to world space
+			scythe::Vector3 center = bounding_box.GetCenter();
+			light_basis_.TransformVector(&center);
+			float light_distance = 0.5f * (ortho_far - ortho_near);
+			scythe::Vector3 light_position = center + light_direction_ * light_distance;
+			scythe::Matrix4::CreateView(light_basis_, light_position, &light_view_matrices_[i]);
+		}
+	}
+#endif
+	void UpdateLightMatrices()
+	{
+#ifdef USE_CSM
+		CalculateSplitMatrices();
+#else
+		const scythe::Vector3& target_position = ball_node_->GetTranslation();
+		const float light_distance = 10.0f;
+		scythe::Vector3 light_position = target_position + light_direction_ * light_distance;
+		scythe::Matrix4::CreateLookAt(light_position, target_position,
+			scythe::Vector3::UnitY(), &light_view_matrix_);
+#endif
+	}
 	
 private:
+	scythe::Frustum frustum_;
+
 	scythe::Mesh * sphere_mesh_;
 	scythe::Mesh * quad_mesh_;
 	scythe::Mesh * floor_mesh_;
@@ -1003,7 +1260,11 @@ private:
 	scythe::Texture * fg_texture_;
 	scythe::Texture * irradiance_rt_;
 	scythe::Texture * prefilter_rt_;
+#ifdef USE_CSM
+	scythe::Texture * shadow_color_rts_[kMaxCSMSplits];
+#else
 	scythe::Texture * shadow_color_rt_;
+#endif
 	scythe::Texture * shadow_depth_rt_;
 	scythe::Texture * blur_color_rt_;
 
@@ -1017,9 +1278,19 @@ private:
 	scythe::Rect * victory_exit_rect_;
 	
 	scythe::Matrix4 projection_view_matrix_;
+#ifdef USE_CSM
+	scythe::Matrix3 light_basis_;
+	scythe::Matrix3 light_basis_inverse_;
+	scythe::Matrix4 depth_bias_projection_view_matrices_[kMaxCSMSplits];
+	scythe::Matrix4 light_projection_matrices_[kMaxCSMSplits];
+	scythe::Matrix4 light_view_matrices_[kMaxCSMSplits];
+	float split_distances_[kMaxCSMSplits + 1];
+	float clip_space_split_distances_[kMaxCSMSplits];
+#else
 	scythe::Matrix4 depth_bias_projection_view_matrix_;
 	scythe::Matrix4 light_projection_matrix_;
 	scythe::Matrix4 light_view_matrix_;
+#endif
 
 	scythe::Quaternion camera_orientation_;
 	scythe::Vector3 camera_position_;
@@ -1029,14 +1300,17 @@ private:
 	float cos_camera_alpha_;
 	float sin_camera_alpha_;
 
-	scythe::Vector3 light_position_;
-	const scythe::Vector3 light_direction_;
-	const float light_distance_;
+	const scythe::Vector3 light_direction_; // direction to light
+	const float fov_degrees_;
+	const float z_near_;
+	const float z_far_;
 
 	bool need_update_projection_matrix_;
 	bool need_update_view_matrix_;
+	bool need_update_frustum_;
 	bool victory_;
 	bool show_shadow_texture_; // for DEBUG
+	int shadow_texture_index_;
 };
 
 DECLARE_MAIN(MarbleMazeApp);

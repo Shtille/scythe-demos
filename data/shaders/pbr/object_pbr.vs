@@ -11,7 +11,11 @@ layout(location = 2) in vec2 a_texcoord;
 uniform mat4 u_projection_view;
 uniform mat4 u_model;
 #ifdef USE_SHADOW
- uniform mat4 u_depth_bias_projection_view;
+ #ifdef USE_CSM
+  uniform mat4 u_depth_bias_projection_view[NUM_SPLITS];
+ #else
+  uniform mat4 u_depth_bias_projection_view;
+ #endif
 #endif
 
 out DATA
@@ -24,7 +28,12 @@ out DATA
 #endif
 	vec2 uv;
 #ifdef USE_SHADOW
+ #ifdef USE_CSM
+ 	vec4 shadow_coords[NUM_SPLITS];
+ 	float clip_space_z;
+ #else
 	vec4 shadow_coord;
+ #endif
 #endif
 } vs_out;
 
@@ -47,8 +56,17 @@ void main()
 #endif
 	vs_out.uv = a_texcoord;
 #ifdef USE_SHADOW
+ #ifdef USE_CSM
+ 	for (int i = 0; i < NUM_SPLITS; i++)
+ 		vs_out.shadow_coords[i] = u_depth_bias_projection_view[i] * position_world;
+ #else
 	vs_out.shadow_coord = u_depth_bias_projection_view * position_world;
+ #endif
 #endif
 
 	gl_Position = u_projection_view * position_world;
+
+#ifdef USE_CSM
+	vs_out.clip_space_z = gl_Position.z;
+#endif
 }
