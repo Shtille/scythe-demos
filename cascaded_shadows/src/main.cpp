@@ -10,20 +10,22 @@
 
 #include <cmath>
 
-#define USE_CSM
-
 /*
 The main concept of creating this application is testing cubemap edge artefacts during accessing mipmaps.
 */
 namespace {
 	const int kShadowMapSize = 1024;
-#ifdef USE_CSM
 	const U32 kMaxCSMSplits = 4;
 	const U32 kNumSplits = 3;
 	const float kSplitLambda = 0.5f;
-#endif
 }
 
+/**
+ * Cascaded shadow maps demo.
+ * Keys:
+ * - C - switch color mode to show different shadow levels
+ * - B - enable/disable blur
+ */
 class CascadedShadowsApp
 : public scythe::OpenGlApplication
 , public scythe::DesktopInputListener
@@ -47,8 +49,8 @@ public:
 	, need_update_view_matrix_(true)
 	, need_update_frustum_(true)
 	, show_color_(false)
-	, show_shadow_texture_(false)
-	, is_vsm_(false)
+	, use_blur_(false)
+	, is_vsm_(true)
 	{
 		SetInputListener(this);
 	}
@@ -64,25 +66,15 @@ public:
 	{
 		const scythe::Vector3 kLightColor(1.0f);
 
-		quad_shader_->Bind();
-		quad_shader_->Uniform1i("u_texture", 0);
-
-		if (is_vsm_)
-		{
-			blur_shader_->Bind();
-			blur_shader_->Uniform1i("u_texture", 0);
-		}
+		blur_shader_->Bind();
+		blur_shader_->Uniform1i("u_texture", 0);
 
 		object_shader_->Bind();
 		object_shader_->Uniform3fv("u_light.color", kLightColor);
 		object_shader_->Uniform3fv("u_light.direction", light_direction_);
-#ifdef USE_CSM
 		const int array_units[] = {0, 1, 2, 3};
 		static_assert(_countof(array_units) == kMaxCSMSplits, "Array units count mismatch");
 		object_shader_->Uniform1iv("u_shadow_samplers", array_units, kNumSplits);
-#else
-		object_shader_->Uniform1i("u_shadow_sampler", 0);
-#endif
 		object_shader_->Unbind();
 	}
 	void BindShaderVariables()
@@ -121,24 +113,32 @@ public:
 		
 		// Load shaders
 		if (!renderer_->AddShader(text_shader_, "data/shaders/text")) return false;
-		if (!renderer_->AddShader(quad_shader_, "data/shaders/quad")) return false;
+		if (!renderer_->AddShader(blur_shader_, "data/shaders/blur")) return false;
 		if (is_vsm_)
 		{
-			if (!renderer_->AddShader(object_shader_, "data/shaders/shadows/object_vsm")) return false;
+			std::string num_splits_string = scythe::string_format("#define NUM_SPLITS %u", kNumSplits);
+			const char* object_shader_defines[] = {
+				"USE_CSM",
+				num_splits_string.c_str(),
+			};
+			scythe::ShaderInfo object_shader_info(
+				"data/shaders/shadows/object_csm_vsm", // base filename
+				nullptr, // no vertex filename
+				nullptr, // no fragment filename
+				nullptr, // array of attribs
+				0, // number of attribs
+				object_shader_defines, // array of defines
+				_countof(object_shader_defines) // number of defines
+				);
+			if (!renderer_->AddShader(object_shader_, object_shader_info)) return false;
 			if (!renderer_->AddShader(object_shadow_shader_, "data/shaders/shadows/depth_vsm")) return false;
-			if (!renderer_->AddShader(blur_shader_, "data/shaders/blur")) return false;
 		}
 		else
 		{
-#ifdef USE_CSM
 			std::string num_splits_string = scythe::string_format("#define NUM_SPLITS %u", kNumSplits);
-#endif
 			const char* object_shader_defines[] = {
-				"USE_SHADOW",
-#ifdef USE_CSM
 				"USE_CSM",
 				num_splits_string.c_str(),
-#endif
 			};
 			scythe::ShaderInfo object_shader_info(
 				"data/shaders/shadows/object_csm", // base filename
@@ -154,21 +154,18 @@ public:
 		}
 
 		// Render targets
-#ifdef USE_CSM
-		for (U32 i = 0; i < kNumSplits; ++i)
-			renderer_->CreateTextureDepth(shadow_depth_rts_[i], kShadowMapSize, kShadowMapSize, 32);
-#else
 		if (is_vsm_)
 		{
-			renderer_->AddRenderTarget(shadow_color_rt_, kShadowMapSize, kShadowMapSize, scythe::Image::Format::kRG32);
-			renderer_->AddRenderDepthStencil(shadow_depth_rt_, kShadowMapSize, kShadowMapSize, 32, 0);
+			for (U32 i = 0; i < kNumSplits; ++i)
+				renderer_->AddRenderTarget(shadow_color_rts_[i], kShadowMapSize, kShadowMapSize, scythe::Image::Format::kRG32);
+			renderer_->AddRenderDepthStencil(shadow_depth_rts_[0], kShadowMapSize, kShadowMapSize, 32, 0);
 			renderer_->AddRenderTarget(blur_color_rt_, kShadowMapSize, kShadowMapSize, scythe::Image::Format::kRG32);
 		}
 		else
 		{
-			renderer_->CreateTextureDepth(shadow_depth_rt_, kShadowMapSize, kShadowMapSize, 32);
+			for (U32 i = 0; i < kNumSplits; ++i)
+				renderer_->CreateTextureDepth(shadow_depth_rts_[i], kShadowMapSize, kShadowMapSize, 32);
 		}
-#endif
 
 		// Fonts
 		renderer_->AddFont(font_, "data/fonts/GoodDog.otf");
@@ -182,16 +179,10 @@ public:
 		UpdateCameraOrientation();
 		UpdateCameraPosition();
 
-#ifdef USE_CSM
 		// Since we use light basis also for view matrix we should use inverse direction vector
 		scythe::Matrix3::CreateBasis(-light_direction_, scythe::Vector3::UnitY(), &light_basis_);
 		light_basis_.Invert(&light_basis_inverse_);
 		CalculateSplitDistances();
-#else
-		// Generate matrix for shadows
-		// Ortho matrix is used for directional light sources and perspective for spot ones.
-		scythe::Matrix4::CreateOrthographic(10.0f, 10.0f, 0.0f, 20.0f, &light_projection_matrix_);
-#endif
 
 		// Finally bind constants
 		BindShaderConstants();
@@ -251,8 +242,7 @@ public:
 		cube_->Render();
 		renderer_->PopMatrix();
 	}
-#ifdef USE_CSM
-	void ShadowPassCSM()
+	void ShadowPass()
 	{
 		/*
 			Native view of bias matrix is:
@@ -268,13 +258,19 @@ public:
 			0.0f, 0.0f, 0.0f, 1.0f
 		);
 
+		const float kBlurScale = 1.0f;
+		const float kBlurSize = kBlurScale / static_cast<float>(kShadowMapSize);
+
 		for (U32 i = 0; i < kNumSplits; ++i)
 		{
 			scythe::Matrix4 depth_projection_view = light_projection_matrices_[i] * light_view_matrices_[i];
 			depth_bias_projection_view_matrices_[i] = bias_matrix * depth_projection_view;
 
 			// Render shadows
-			renderer_->ChangeRenderTarget(nullptr, shadow_depth_rts_[i]);
+			if (is_vsm_)
+				renderer_->ChangeRenderTarget(shadow_color_rts_[i], shadow_depth_rts_[0]);
+			else
+				renderer_->ChangeRenderTarget(nullptr, shadow_depth_rts_[i]);
 			renderer_->ClearColorAndDepthBuffers();
 
 			object_shadow_shader_->Bind();
@@ -285,146 +281,82 @@ public:
 			object_shadow_shader_->Unbind();
 
 			renderer_->ChangeRenderTarget(nullptr, nullptr);
+
+			if (use_blur_)
+			{
+				renderer_->DisableDepthTest();
+				blur_shader_->Bind();
+
+				// Blur horizontally
+				renderer_->ChangeRenderTarget(blur_color_rt_, nullptr);
+				renderer_->ChangeTexture(shadow_color_rts_[i], 0);
+				renderer_->ClearColorBuffer();
+				blur_shader_->Uniform2f("u_scale", kBlurSize, 0.0f);
+				quad_->Render();
+
+				// Blur vertically
+				renderer_->ChangeRenderTarget(shadow_color_rts_[i], nullptr);
+				renderer_->ChangeTexture(blur_color_rt_, 0);
+				renderer_->ClearColorBuffer();
+				blur_shader_->Uniform2f("u_scale", 0.0f, kBlurSize);
+				quad_->Render();
+
+				// Back to main framebuffer
+				renderer_->ChangeRenderTarget(nullptr, nullptr);
+
+				blur_shader_->Unbind();
+				renderer_->EnableDepthTest();
+			}
 		}
 	}
-#else
-	void ShadowPass()
+	void BindTextures()
 	{
-		scythe::Matrix4 depth_projection_view = light_projection_matrix_ * light_view_matrix_;
-		/*
-			Native view of bias matrix is:
-			    | 0.5 0.0 0.0 0.5 |
-			M = | 0.0 0.5 0.0 0.5 |
-			    | 0.0 0.0 0.5 0.5 |
-			    | 0.0 0.0 0.0 1.0 |
-		*/
-		scythe::Matrix4 bias_matrix(
-			0.5f, 0.0f, 0.0f, 0.5f,
-			0.0f, 0.5f, 0.0f, 0.5f,
-			0.0f, 0.0f, 0.5f, 0.5f,
-			0.0f, 0.0f, 0.0f, 1.0f
-		);
-		depth_bias_projection_view_matrix_ = bias_matrix * depth_projection_view;
-
-		if (is_vsm_)
-			renderer_->ChangeRenderTarget(shadow_color_rt_, shadow_depth_rt_);
-		else
-			renderer_->ChangeRenderTarget(nullptr, shadow_depth_rt_);
-		renderer_->ClearColorAndDepthBuffers();
-
-		object_shadow_shader_->Bind();
-		object_shadow_shader_->UniformMatrix4fv("u_projection_view", depth_projection_view);
-
-		RenderObjects(object_shadow_shader_);
-
-		object_shadow_shader_->Unbind();
-
-		renderer_->ChangeRenderTarget(nullptr, nullptr);
-
 		if (is_vsm_)
 		{
-			const float kBlurScale = 1.0f;
-			const float kBlurSize = kBlurScale / static_cast<float>(kShadowMapSize);
-
-			renderer_->DisableDepthTest();
-			blur_shader_->Bind();
-
-			// Blur horizontally
-			renderer_->ChangeRenderTarget(blur_color_rt_, nullptr);
-			renderer_->ChangeTexture(shadow_color_rt_, 0);
-			renderer_->ClearColorBuffer();
-			blur_shader_->Uniform2f("u_scale", kBlurSize, 0.0f);
-			quad_->Render();
-
-			// Blur vertically
-			renderer_->ChangeRenderTarget(shadow_color_rt_, nullptr);
-			renderer_->ChangeTexture(blur_color_rt_, 0);
-			renderer_->ClearColorBuffer();
-			blur_shader_->Uniform2f("u_scale", 0.0f, kBlurSize);
-			quad_->Render();
-
-			// Back to main framebuffer
-			renderer_->ChangeRenderTarget(nullptr, nullptr);
-
-			blur_shader_->Unbind();
-			renderer_->EnableDepthTest();
+			for (U32 i = 0 ; i < kNumSplits; ++i)
+				renderer_->ChangeTexture(shadow_color_rts_[i], i);
+		}
+		else
+		{
+			for (U32 i = 0 ; i < kNumSplits; ++i)
+				renderer_->ChangeTexture(shadow_depth_rts_[i], i);
 		}
 	}
-#endif
+	void UnbindTextures()
+	{
+		for (U32 i = 0 ; i < kNumSplits; ++i)
+			renderer_->ChangeTexture(nullptr, i);
+	}
 	void RenderScene()
 	{
 		// First render shadows
 		if (is_vsm_)
 		{
-#ifndef USE_CSM
 			ShadowPass();
-#endif
 		}
 		else
 		{
 			renderer_->CullFace(scythe::CullFaceType::kFront);
-#ifdef USE_CSM
-			ShadowPassCSM();
-#else
 			ShadowPass();
-#endif
 			renderer_->CullFace(scythe::CullFaceType::kBack);
 		}
 
-		if (show_shadow_texture_)
-		{
-			quad_shader_->Bind();
+		// Render objects
+		object_shader_->Bind();
+		object_shader_->UniformMatrix4fv("u_projection_view", projection_view_matrix_);
+		object_shader_->UniformMatrix4fv("u_depth_bias_projection_view", 
+			depth_bias_projection_view_matrices_[0], false, kNumSplits);
+		// First split distance stores near value
+		object_shader_->Uniform1fv("u_clip_space_split_distances", 
+			clip_space_split_distances_, kNumSplits);
+		object_shader_->Uniform1f("u_color_factor", show_color_ ? 1.0f : 0.0f);
+		// object_shader_->Uniform3fv("u_camera.position", camera_position_);
 
-#ifdef USE_CSM
-#else
-			if (is_vsm_)
-				renderer_->ChangeTexture(shadow_color_rt_, 0);
-			else
-				renderer_->ChangeTexture(shadow_depth_rt_, 0);
-			quad_->Render();
-			renderer_->ChangeTexture(nullptr, 0);
-#endif
+		BindTextures();
+		RenderObjects(object_shader_);
+		UnbindTextures();
 
-			quad_shader_->Unbind();
-		}
-		else
-		{
-			// Render objects
-			object_shader_->Bind();
-			object_shader_->UniformMatrix4fv("u_projection_view", projection_view_matrix_);
-#ifdef USE_CSM
-			object_shader_->UniformMatrix4fv("u_depth_bias_projection_view", 
-				depth_bias_projection_view_matrices_[0], false, kNumSplits);
-			// First split distance stores near value
-			object_shader_->Uniform1fv("u_clip_space_split_distances", 
-				clip_space_split_distances_, kNumSplits);
-			object_shader_->Uniform1f("u_color_factor", show_color_ ? 1.0f : 0.0f);
-#else
-			object_shader_->UniformMatrix4fv("u_depth_bias_projection_view", depth_bias_projection_view_matrix_);
-#endif
-			// object_shader_->Uniform3fv("u_camera.position", camera_position_);
-
-#ifdef USE_CSM
-			for (U32 i = 0 ; i < kNumSplits; ++i)
-				renderer_->ChangeTexture(shadow_depth_rts_[i], i);
-#else
-			if (is_vsm_)
-				renderer_->ChangeTexture(shadow_color_rt_, 0);
-			else
-				renderer_->ChangeTexture(shadow_depth_rt_, 0);
-#endif
-
-			RenderObjects(object_shader_);
-
-#ifdef USE_CSM
-			for (U32 i = 0 ; i < kNumSplits; ++i)
-				renderer_->ChangeTexture(nullptr, i);
-#else
-			renderer_->ChangeTexture(nullptr, 0);
-#endif
-
-			object_shader_->Unbind();
-		}
+		object_shader_->Unbind();
 	}
 	void RenderInterface()
 	{
@@ -469,13 +401,13 @@ public:
 		{
 			renderer_->TakeScreenshot("screenshots");
 		}
-		else if (key == scythe::PublicKey::kSpace)
-		{
-			show_shadow_texture_ = !show_shadow_texture_;
-		}
 		else if (key == scythe::PublicKey::kC)
 		{
 			show_color_ = !show_color_;
+		}
+		else if (key == scythe::PublicKey::kB)
+		{
+			use_blur_ = !use_blur_;
 		}
 	}
 	void OnKeyUp(scythe::PublicKey key, int modifiers) final
@@ -568,9 +500,7 @@ public:
 			scythe::Matrix4::CreatePerspective(fov_degrees_, aspect_ratio_, 
 				z_near_, z_far_, &projection_matrix);
 			renderer_->SetProjectionMatrix(projection_matrix);
-#ifdef USE_CSM
 			UpdateClipSpaceSplitDistances(projection_matrix);
-#endif
 		}
 	}
 	void UpdateViewMatrix()
@@ -592,7 +522,6 @@ public:
 			frustum_.Set(projection_view_matrix_);
 		}
 	}
-#ifdef USE_CSM
 	/**
 	 * Calculates split distances in world space.
 	 * Depends on z near and z far.
@@ -690,18 +619,9 @@ public:
 			scythe::Matrix4::CreateView(light_basis_, light_position, &light_view_matrices_[i]);
 		}
 	}
-#endif
 	void UpdateLightMatrices()
 	{
-#ifdef USE_CSM
 		CalculateSplitMatrices();
-#else
-		const scythe::Vector3 target_position(0.0f, 0.0f, 0.0f);
-		const float light_distance = 10.0f;
-		scythe::Vector3 light_position = target_position + light_direction_ * light_distance;
-		scythe::Matrix4::CreateLookAt(light_position, target_position,
-			scythe::Vector3::UnitY(), &light_view_matrix_);
-#endif
 	}
 	
 private:
@@ -711,24 +631,18 @@ private:
 	scythe::Mesh * cube_;
 
 	scythe::Shader * text_shader_;
-	scythe::Shader * quad_shader_;
 	scythe::Shader * object_shader_;
 	scythe::Shader * object_shadow_shader_; //!< simplified version for shadows generation
 	scythe::Shader * blur_shader_;
 
-	scythe::Texture * shadow_color_rt_;
-#ifdef USE_CSM
+	scythe::Texture * shadow_color_rts_[kMaxCSMSplits];
 	scythe::Texture * shadow_depth_rts_[kMaxCSMSplits];
-#else
-	scythe::Texture * shadow_depth_rt_;
-#endif
 	scythe::Texture * blur_color_rt_;
 
 	scythe::Font * font_;
 	scythe::DynamicText * fps_text_;
 	
 	scythe::Matrix4 projection_view_matrix_;
-#ifdef USE_CSM
 	scythe::Matrix3 light_basis_;
 	scythe::Matrix3 light_basis_inverse_;
 	scythe::Matrix4 depth_bias_projection_view_matrices_[kMaxCSMSplits];
@@ -736,11 +650,6 @@ private:
 	scythe::Matrix4 light_view_matrices_[kMaxCSMSplits];
 	float split_distances_[kMaxCSMSplits + 1];
 	float clip_space_split_distances_[kMaxCSMSplits];
-#else
-	scythe::Matrix4 depth_bias_projection_view_matrix_;
-	scythe::Matrix4 light_projection_matrix_;
-	scythe::Matrix4 light_view_matrix_;
-#endif
 
 	scythe::Quaternion camera_orientation_;
 	scythe::Vector3 camera_position_;
@@ -759,7 +668,7 @@ private:
 	bool need_update_view_matrix_;
 	bool need_update_frustum_;
 	bool show_color_;
-	bool show_shadow_texture_;
+	bool use_blur_;
 	const bool is_vsm_;
 };
 
