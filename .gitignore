@@ -62,3 +62,6 @@ Temporary Items
 
 # Screenshots folder
 screenshots/*
+
+# Binary folder
+[Bb]in/
